@@ -92,19 +92,51 @@ export async function handleYouTube(url: string): Promise<Normalized> {
     return { title, content: transcriptText, source: "youtube", url };
   }
 
-  const fallback = buildMetadataContent(info);
+  const fallback =
+    buildMetadataContent(info) ?? (await buildOEmbedContent(url));
   if (!fallback) {
     throw new IngestError(
       "Couldn't fetch a transcript or any metadata for this video. " +
         "Paste the content as text instead."
     );
   }
-  return { title, content: fallback, source: "youtube", url };
+  return {
+    title: title ?? fallback.title,
+    content: fallback.content,
+    source: "youtube",
+    url,
+  };
+}
+
+async function buildOEmbedContent(
+  url: string
+): Promise<{ title?: string; content: string } | null> {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      title?: string;
+      author_name?: string;
+    };
+    if (!data.title && !data.author_name) return null;
+    const lines = [
+      "[No transcript and no full metadata were available for this video. The summary below is based only on the video's title and channel.]",
+      "",
+    ];
+    if (data.title) lines.push(`Title: ${data.title}`);
+    if (data.author_name) lines.push(`Channel: ${data.author_name}`);
+    lines.push(`URL: ${url}`);
+    return { title: data.title, content: lines.join("\n") };
+  } catch {
+    return null;
+  }
 }
 
 function buildMetadataContent(
   info: Awaited<ReturnType<Innertube["getInfo"]>>
-): string | null {
+): { title?: string; content: string } | null {
   const b = info.basic_info;
   if (!b) return null;
 
@@ -122,7 +154,8 @@ function buildMetadataContent(
   if (b.short_description?.trim()) {
     lines.push("", "Description:", b.short_description.trim());
   }
-  return lines.length > 2 ? lines.join("\n") : null;
+  if (lines.length <= 2) return null;
+  return { title: b.title ?? undefined, content: lines.join("\n") };
 }
 
 function formatDuration(seconds: number): string {
