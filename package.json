@@ -20,7 +20,7 @@
     "openai": "^4.77.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "youtube-transcript": "^1.2.1"
+    "youtubei.js": "^17.0.1"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.7",

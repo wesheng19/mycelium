@@ -1,4 +1,4 @@
-import { YoutubeTranscript } from "youtube-transcript";
+import { Innertube } from "youtubei.js";
 import { IngestError } from "./errors";
 
 export type Normalized = {
@@ -33,25 +33,11 @@ export function extractVideoId(url: string): string | null {
     }
     const v = u.searchParams.get("v");
     if (v) return v;
-    // /shorts/<id> or /embed/<id>
     const segs = u.pathname.split("/").filter(Boolean);
     if (segs[0] === "shorts" || segs[0] === "embed") return segs[1] ?? null;
     return null;
   } catch {
     return null;
-  }
-}
-
-async function fetchOEmbedTitle(url: string): Promise<string | undefined> {
-  try {
-    const res = await fetch(
-      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`
-    );
-    if (!res.ok) return undefined;
-    const data = (await res.json()) as { title?: string };
-    return typeof data.title === "string" ? data.title : undefined;
-  } catch {
-    return undefined;
   }
 }
 
@@ -63,47 +49,67 @@ export async function handleYouTube(url: string): Promise<Normalized> {
     );
   }
 
-  let transcript: { text: string }[];
+  let yt: Innertube;
   try {
-    transcript = await YoutubeTranscript.fetchTranscript(videoId);
+    yt = await Innertube.create({ lang: "en" });
   } catch (err) {
-    const msg =
-      err instanceof Error ? err.message.toLowerCase() : String(err);
-    if (
-      msg.includes("disabled") ||
-      msg.includes("not available") ||
-      msg.includes("no transcript") ||
-      msg.includes("could not get")
-    ) {
-      throw new IngestError(
-        "This YouTube video doesn't have a transcript available. " +
-          "Try a different video or paste the content as text."
-      );
-    }
     throw new IngestError(
-      `Failed to fetch transcript for this video: ${err instanceof Error ? err.message : "unknown error"}. ` +
-        "The video may be private, age-restricted, or region-locked."
+      `Failed to initialize YouTube client: ${err instanceof Error ? err.message : String(err)}.`
     );
   }
 
-  const title = await fetchOEmbedTitle(url);
+  let info: Awaited<ReturnType<typeof yt.getInfo>>;
+  try {
+    info = await yt.getInfo(videoId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/private|unavailable|removed|age/i.test(msg)) {
+      throw new IngestError(
+        `This YouTube video is unavailable (private, removed, age-restricted, or region-locked).`
+      );
+    }
+    throw new IngestError(`Failed to load YouTube video: ${msg}.`);
+  }
 
-  const content = transcript
-    .map((seg) => seg.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const title = info.basic_info?.title ?? undefined;
 
-  if (!content) {
+  let transcriptText: string;
+  try {
+    const t = await info.getTranscript();
+    const segments =
+      t?.transcript?.content?.body?.initial_segments ?? [];
+    transcriptText = segments
+      .map((s) => s.snippet?.text ?? "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : String(err);
+    if (
+      msg.includes("transcript") ||
+      msg.includes("caption") ||
+      msg.includes("not available")
+    ) {
+      throw new IngestError(
+        "This YouTube video has no captions available (not even auto-generated). " +
+          "Paste the content as text, or try a different video."
+      );
+    }
+    throw new IngestError(
+      `Failed to fetch transcript: ${err instanceof Error ? err.message : "unknown error"}.`
+    );
+  }
+
+  if (!transcriptText) {
     throw new IngestError(
       "YouTube returned an empty transcript for this video. " +
-        "Try a different video or paste the content as text."
+        "Paste the content as text instead."
     );
   }
 
   return {
     title,
-    content,
+    content: transcriptText,
     source: "youtube",
     url,
   };
