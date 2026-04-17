@@ -14,14 +14,6 @@ export function isAppleNewsUrl(url: string): boolean {
   }
 }
 
-function isAppleNewsHost(href: string): boolean {
-  try {
-    return APPLE_NEWS_HOSTS.has(new URL(href).hostname);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Apple News share links (apple.news/<id>) land on a splash page that
  * asks the user to open the article in the Apple News app. For content
@@ -105,13 +97,34 @@ function findPublisherUrl(doc: Document): string | null {
     }
   }
 
+  // Fallback — apple.news splash pages often omit all meta and only
+  // expose the publisher URL in the "Click here if the story doesn't
+  // open" anchor. Take the first anchor whose href isn't apple.*.
+  for (const a of doc.querySelectorAll("a[href]")) {
+    const href = a.getAttribute("href");
+    if (href) candidates.push(href);
+  }
+
   for (const href of candidates) {
     if (!href) continue;
     if (!/^https?:\/\//i.test(href)) continue;
-    if (isAppleNewsHost(href)) continue;
+    if (isAppleHost(href)) continue;
     return href;
   }
   return null;
+}
+
+function isAppleHost(href: string): boolean {
+  try {
+    const h = new URL(href).hostname;
+    return (
+      APPLE_NEWS_HOSTS.has(h) ||
+      h === "apple.com" ||
+      h.endsWith(".apple.com")
+    );
+  } catch {
+    return true;
+  }
 }
 
 function collectJsonLdUrls(node: unknown, out: string[]): void {
