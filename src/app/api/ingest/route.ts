@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleYouTube, isYouTubeUrl } from "@/lib/ingest/youtube";
+import { handleAppleNews, isAppleNewsUrl } from "@/lib/ingest/appleNews";
 import { handleArticle } from "@/lib/ingest/article";
 import { handleText } from "@/lib/ingest/text";
 import { IngestError } from "@/lib/ingest/errors";
@@ -52,7 +53,9 @@ export async function POST(req: Request) {
     const normalized = url
       ? isYouTubeUrl(url)
         ? await handleYouTube(url)
-        : await handleArticle(url)
+        : isAppleNewsUrl(url)
+          ? await handleAppleNews(url)
+          : await handleArticle(url)
       : await handleText(text!);
 
     const summary = await summarize({
