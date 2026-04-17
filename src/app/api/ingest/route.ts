@@ -14,9 +14,19 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type IngestBody = {
-  url?: string;
+  url?: string | string[];
   text?: string;
 };
+
+function firstString(v: unknown): string | undefined {
+  if (typeof v === "string") return v.trim() || undefined;
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      if (typeof item === "string" && item.trim()) return item.trim();
+    }
+  }
+  return undefined;
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,8 +50,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const url = body.url?.trim() || undefined;
-  const text = body.text?.trim() || undefined;
+  const url = firstString(body.url);
+  const text = typeof body.text === "string" ? body.text.trim() || undefined : undefined;
   if (!url && !text) {
     return NextResponse.json(
       { error: "Provide a `url` or `text`." },
