@@ -73,7 +73,7 @@ export async function handleYouTube(url: string): Promise<Normalized> {
 
   const title = info.basic_info?.title ?? undefined;
 
-  let transcriptText: string;
+  let transcriptText = "";
   try {
     const t = await info.getTranscript();
     const segments =
@@ -83,34 +83,55 @@ export async function handleYouTube(url: string): Promise<Normalized> {
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message.toLowerCase() : String(err);
-    if (
-      msg.includes("transcript") ||
-      msg.includes("caption") ||
-      msg.includes("not available")
-    ) {
-      throw new IngestError(
-        "This YouTube video has no captions available (not even auto-generated). " +
-          "Paste the content as text, or try a different video."
-      );
-    }
-    throw new IngestError(
-      `Failed to fetch transcript: ${err instanceof Error ? err.message : "unknown error"}.`
-    );
+  } catch {
+    // YouTube's get_transcript endpoint is unreliable under anti-scraping
+    // changes — swallow and fall through to metadata-only content below.
   }
 
-  if (!transcriptText) {
+  if (transcriptText) {
+    return { title, content: transcriptText, source: "youtube", url };
+  }
+
+  const fallback = buildMetadataContent(info);
+  if (!fallback) {
     throw new IngestError(
-      "YouTube returned an empty transcript for this video. " +
+      "Couldn't fetch a transcript or any metadata for this video. " +
         "Paste the content as text instead."
     );
   }
+  return { title, content: fallback, source: "youtube", url };
+}
 
-  return {
-    title,
-    content: transcriptText,
-    source: "youtube",
-    url,
-  };
+function buildMetadataContent(
+  info: Awaited<ReturnType<Innertube["getInfo"]>>
+): string | null {
+  const b = info.basic_info;
+  if (!b) return null;
+
+  const lines: string[] = [
+    "[No transcript was available for this video. The summary below is based only on the video's title, channel, and description.]",
+    "",
+  ];
+  if (b.title) lines.push(`Title: ${b.title}`);
+  if (b.author) lines.push(`Channel: ${b.author}`);
+  if (b.duration) lines.push(`Duration: ${formatDuration(b.duration)}`);
+  if (b.category) lines.push(`Category: ${b.category}`);
+  if (b.keywords?.length) {
+    lines.push(`Tags: ${b.keywords.slice(0, 15).join(", ")}`);
+  }
+  if (b.short_description?.trim()) {
+    lines.push("", "Description:", b.short_description.trim());
+  }
+  return lines.length > 2 ? lines.join("\n") : null;
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return h > 0
+    ? `${h}h ${m}m ${s}s`
+    : m > 0
+      ? `${m}m ${s}s`
+      : `${s}s`;
 }
