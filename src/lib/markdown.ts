@@ -67,6 +67,9 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
     "## TL;DR",
     summary.tldr || "_(no summary)_",
     "",
+    ...(summary.detailedSummary
+      ? ["## Detailed Summary", summary.detailedSummary, ""]
+      : []),
     "## Key Takeaways",
     ...(summary.takeaways.length
       ? summary.takeaways.map((t) => `- ${t}`)
