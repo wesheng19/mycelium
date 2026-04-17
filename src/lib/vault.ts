@@ -64,3 +64,56 @@ export async function commitNote(
     sha: result.data.content?.sha ?? "",
   };
 }
+
+/**
+ * Remove a markdown note from the vault. Returns true if the file was
+ * deleted (or already absent), false if deletion failed. Callers should
+ * treat failures as non-fatal — the DB is still the source of truth for
+ * what's "live" in the UI.
+ */
+export async function deleteNote(
+  filename: string,
+  message?: string
+): Promise<boolean> {
+  const octokit = getOctokit();
+  const { owner, repo } = getRepo();
+
+  let sha: string | undefined;
+  try {
+    const existing = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: filename,
+    });
+    if (!Array.isArray(existing.data) && "sha" in existing.data) {
+      sha = existing.data.sha;
+    }
+  } catch (err) {
+    if (isNotFound(err)) return true;
+    return false;
+  }
+  if (!sha) return false;
+
+  try {
+    await octokit.repos.deleteFile({
+      owner,
+      repo,
+      path: filename,
+      message: message ?? `remove ${filename}`,
+      sha,
+    });
+    return true;
+  } catch (err) {
+    if (isNotFound(err)) return true;
+    return false;
+  }
+}
+
+function isNotFound(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    (err as { status: unknown }).status === 404
+  );
+}
