@@ -53,13 +53,9 @@ export async function POST(req: Request) {
   const url = firstString(body.url);
   const text = typeof body.text === "string" ? body.text.trim() || undefined : undefined;
 
-  // Temporary debug — log raw body shape so we can see how shortcuts serialize.
-  if (!url && !text) {
-    console.log("[ingest] empty url/text. raw body:", JSON.stringify(body));
-  }
   if (!url && !text) {
     return NextResponse.json(
-      { error: "Provide a `url` or `text`.", debugReceivedBody: body },
+      { error: "Provide a `url` or `text`." },
       { status: 400 }
     );
   }
