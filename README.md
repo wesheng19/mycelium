@@ -49,6 +49,24 @@ tags: [ai, productivity]
 ## Why this matters
 ```
 
+## Database migration
+
+The Drizzle schema lives in `src/lib/db.ts`. To create / sync the `learnings` table on Neon:
+
+```bash
+npm run db:push
+```
+
+`drizzle.config.ts` loads `.env.local` itself, so no extra wrapper is needed. Use `npm run db:generate` if you'd rather produce a SQL migration file under `./drizzle` and apply it manually.
+
+## Ingest API
+
+`POST /api/ingest` — body `{url?: string, text?: string}`, requires header `x-ingest-secret: <INGEST_SECRET>`. Detects YouTube vs. article vs. raw text, summarizes with DeepSeek, commits a markdown note to the vault repo, and inserts a row into `learnings`.
+
+`GET /api/learnings/today` — returns today's entries from the DB.
+
+The web UI at `/` prompts for the ingest secret on first load and stores it in `localStorage`.
+
 ## Status
 
-Scaffold only. Ingest endpoint returns a stub. Next: wire up DeepSeek summarization and the GitHub vault commit path.
+End-to-end ingest wired: source detection → DeepSeek summarize → vault commit → DB insert. Embeddings / search are deferred.
