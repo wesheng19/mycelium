@@ -24,6 +24,9 @@ export default function Home() {
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SECRET_KEY);
@@ -102,6 +105,46 @@ export default function Home() {
     setSecret(null);
   }
 
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelectedIds(new Set());
+  }
+
+  function toggleId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleDelete() {
+    if (!secret || selectedIds.size === 0) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/learnings", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-ingest-secret": secret,
+        },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? `Request failed: ${res.status}`);
+      }
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      await loadToday();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div>
       <header
@@ -174,51 +217,116 @@ export default function Home() {
       </form>
 
       <section style={{ marginTop: "2.5rem" }}>
-        <h2 style={{ fontSize: "1.1rem" }}>
-          Today {loadingEntries ? "(…)" : ""}
-        </h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            gap: "0.5rem",
+          }}
+        >
+          <h2 style={{ fontSize: "1.1rem", margin: 0 }}>
+            Today {loadingEntries ? "(…)" : ""}
+          </h2>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            {selectMode && selectedIds.size > 0 && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{
+                  padding: "0.3rem 0.75rem",
+                  background: "#c00",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 5,
+                  fontSize: "0.85rem",
+                  cursor: deleting ? "not-allowed" : "pointer",
+                  opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? "Deleting…" : `Delete ${selectedIds.size}`}
+              </button>
+            )}
+            {entries.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleSelectMode}
+                style={{
+                  background: "none",
+                  border: "1px solid #ddd",
+                  borderRadius: 5,
+                  padding: "0.3rem 0.6rem",
+                  fontSize: "0.8rem",
+                  color: selectMode ? "#111" : "#888",
+                  cursor: "pointer",
+                }}
+              >
+                {selectMode ? "Cancel" : "Select"}
+              </button>
+            )}
+          </div>
+        </div>
         {entries.length === 0 ? (
-          <p style={{ color: "#888" }}>No entries yet.</p>
+          <p style={{ color: "#888", marginTop: "0.75rem" }}>No entries yet.</p>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
+          <ul style={{ listStyle: "none", padding: 0, marginTop: "0.5rem" }}>
             {entries.map((entry) => (
               <li
                 key={entry.id}
+                onClick={selectMode ? () => toggleId(entry.id) : undefined}
                 style={{
                   padding: "0.75rem 0",
                   borderBottom: "1px solid #eee",
+                  display: "flex",
+                  gap: "0.75rem",
+                  alignItems: "flex-start",
+                  cursor: selectMode ? "pointer" : "default",
+                  background: selectedIds.has(entry.id)
+                    ? "#fff8f8"
+                    : "transparent",
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{entry.title}</div>
-                <div style={{ fontSize: "0.85rem", color: "#666" }}>
-                  {entry.source}
-                  {entry.url ? ` · ${entry.url}` : ""}
+                {selectMode && (
+                  <input
+                    type="checkbox"
+                    readOnly
+                    checked={selectedIds.has(entry.id)}
+                    style={{ marginTop: "0.2rem", flexShrink: 0 }}
+                  />
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{entry.title}</div>
+                  <div style={{ fontSize: "0.85rem", color: "#666" }}>
+                    {entry.source}
+                    {entry.url ? ` · ${entry.url}` : ""}
+                  </div>
+                  {entry.tldr && (
+                    <div style={{ marginTop: "0.35rem" }}>{entry.tldr}</div>
+                  )}
+                  {entry.tags && entry.tags.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "0.35rem",
+                        fontSize: "0.8rem",
+                        color: "#555",
+                      }}
+                    >
+                      {entry.tags.map((t) => `#${t}`).join(" ")}
+                    </div>
+                  )}
+                  {entry.markdownPath && (
+                    <div
+                      style={{
+                        marginTop: "0.25rem",
+                        fontSize: "0.75rem",
+                        color: "#888",
+                      }}
+                    >
+                      {entry.markdownPath}
+                    </div>
+                  )}
                 </div>
-                {entry.tldr && (
-                  <div style={{ marginTop: "0.35rem" }}>{entry.tldr}</div>
-                )}
-                {entry.tags && entry.tags.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: "0.35rem",
-                      fontSize: "0.8rem",
-                      color: "#555",
-                    }}
-                  >
-                    {entry.tags.map((t) => `#${t}`).join(" ")}
-                  </div>
-                )}
-                {entry.markdownPath && (
-                  <div
-                    style={{
-                      marginTop: "0.25rem",
-                      fontSize: "0.75rem",
-                      color: "#888",
-                    }}
-                  >
-                    {entry.markdownPath}
-                  </div>
-                )}
               </li>
             ))}
           </ul>

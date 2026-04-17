@@ -1,4 +1,5 @@
 import type { Summary } from "./deepseek";
+import { PACIFIC } from "./tz";
 
 export type MarkdownBuildInput = {
   summary: Summary;
@@ -19,14 +20,15 @@ export function slugify(input: string, max = 60): string {
   return slug || "untitled";
 }
 
-function pad(n: number): string {
-  return n.toString().padStart(2, "0");
-}
-
 export function dateParts(d: Date): { y: string; m: string; day: string; iso: string } {
-  const y = d.getFullYear().toString();
-  const m = pad(d.getMonth() + 1);
-  const day = pad(d.getDate());
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: PACIFIC,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+  const { year: y, month: m, day } = parts;
   return { y, m, day, iso: `${y}-${m}-${day}` };
 }
 
