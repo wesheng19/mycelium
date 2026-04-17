@@ -1,4 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
+import { IngestError } from "./errors";
 
 export type Normalized = {
   title?: string;
@@ -57,13 +58,35 @@ async function fetchOEmbedTitle(url: string): Promise<string | undefined> {
 export async function handleYouTube(url: string): Promise<Normalized> {
   const videoId = extractVideoId(url);
   if (!videoId) {
-    throw new Error(`Could not extract YouTube video id from URL: ${url}`);
+    throw new IngestError(
+      `Couldn't extract a video ID from that YouTube URL. Check the link and try again.`
+    );
   }
 
-  const [transcript, title] = await Promise.all([
-    YoutubeTranscript.fetchTranscript(videoId),
-    fetchOEmbedTitle(url),
-  ]);
+  let transcript: { text: string }[];
+  try {
+    transcript = await YoutubeTranscript.fetchTranscript(videoId);
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message.toLowerCase() : String(err);
+    if (
+      msg.includes("disabled") ||
+      msg.includes("not available") ||
+      msg.includes("no transcript") ||
+      msg.includes("could not get")
+    ) {
+      throw new IngestError(
+        "This YouTube video doesn't have a transcript available. " +
+          "Try a different video or paste the content as text."
+      );
+    }
+    throw new IngestError(
+      `Failed to fetch transcript for this video: ${err instanceof Error ? err.message : "unknown error"}. ` +
+        "The video may be private, age-restricted, or region-locked."
+    );
+  }
+
+  const title = await fetchOEmbedTitle(url);
 
   const content = transcript
     .map((seg) => seg.text)
@@ -72,7 +95,10 @@ export async function handleYouTube(url: string): Promise<Normalized> {
     .trim();
 
   if (!content) {
-    throw new Error("Empty transcript returned for video");
+    throw new IngestError(
+      "YouTube returned an empty transcript for this video. " +
+        "Try a different video or paste the content as text."
+    );
   }
 
   return {

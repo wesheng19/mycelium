@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { handleYouTube, isYouTubeUrl } from "@/lib/ingest/youtube";
 import { handleArticle } from "@/lib/ingest/article";
 import { handleText } from "@/lib/ingest/text";
+import { IngestError } from "@/lib/ingest/errors";
 import { summarize } from "@/lib/deepseek";
 import { buildMarkdown, vaultPath } from "@/lib/markdown";
 import { commitNote } from "@/lib/vault";
@@ -90,8 +91,14 @@ export async function POST(req: Request) {
       summary,
     });
   } catch (err) {
+    if (err instanceof IngestError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 422 });
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[ingest] failed:", err);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    console.error("[ingest] unexpected failure:", err);
+    return NextResponse.json(
+      { ok: false, error: `Something went wrong: ${message}` },
+      { status: 500 }
+    );
   }
 }
