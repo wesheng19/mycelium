@@ -111,8 +111,35 @@ export default function Home() {
       setBookSuggestion(null);
       await loadToday();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setStatus(null);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      // Long DeepSeek runs sometimes complete on the server but miss the
+      // HTTP response window. Refetch the list directly; if a new entry
+      // landed we treat it as a soft success.
+      const priorIds = new Set(entries.map((e) => e.id));
+      let landed = false;
+      try {
+        const res = await fetch("/api/learnings/today", { cache: "no-store" });
+        if (res.ok) {
+          const data = (await res.json()) as { entries: Entry[] };
+          setEntries(data.entries);
+          landed = data.entries.some((e) => !priorIds.has(e.id));
+        }
+      } catch {
+        // fall through to the plain error message
+      }
+      if (landed) {
+        setStatus(
+          "Network dropped, but a new entry landed — it likely saved."
+        );
+        setError(null);
+        setUrl("");
+        setText("");
+        setBook("");
+        setBookSuggestion(null);
+      } else {
+        setError(message);
+        setStatus(null);
+      }
     } finally {
       setSubmitting(false);
     }

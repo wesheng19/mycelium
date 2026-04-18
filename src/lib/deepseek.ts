@@ -133,7 +133,7 @@ export async function summarizeBookPassage(
     `Book: ${input.book}`,
     "",
     "Passage:",
-    truncate(input.text),
+    truncate(input.text, 25_000),
   ].join("\n");
 
   const completion = await deepseek.chat.completions.create({
