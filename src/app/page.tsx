@@ -19,6 +19,7 @@ export default function Home() {
   const [secret, setSecret] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
+  const [book, setBook] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -27,6 +28,10 @@ export default function Home() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [bookSuggestion, setBookSuggestion] = useState<{
+    typed: string;
+    suggested: string;
+  } | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SECRET_KEY);
@@ -59,8 +64,9 @@ export default function Home() {
     loadToday();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitIngest(
+    payload: Record<string, unknown>
+  ): Promise<void> {
     if (!secret) {
       setError("Missing INGEST_SECRET — refresh and enter it.");
       return;
@@ -75,22 +81,34 @@ export default function Home() {
           "Content-Type": "application/json",
           "x-ingest-secret": secret,
         },
-        body: JSON.stringify({
-          url: url || undefined,
-          text: text || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
         path?: string;
+        needsBookConfirmation?: boolean;
+        typed?: string;
+        suggested?: string;
       };
+      if (
+        res.status === 409 &&
+        data.needsBookConfirmation &&
+        data.typed &&
+        data.suggested
+      ) {
+        setBookSuggestion({ typed: data.typed, suggested: data.suggested });
+        setStatus(null);
+        return;
+      }
       if (!res.ok || !data.ok) {
         throw new Error(data.error ?? `Request failed: ${res.status}`);
       }
       setStatus(`Saved → ${data.path}`);
       setUrl("");
       setText("");
+      setBook("");
+      setBookSuggestion(null);
       await loadToday();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -98,6 +116,23 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await submitIngest({
+      url: url || undefined,
+      text: text || undefined,
+      book: book || undefined,
+    });
+  }
+
+  async function confirmWithBook(chosen: string) {
+    await submitIngest({
+      text: text || undefined,
+      book: chosen,
+      confirmBook: true,
+    });
   }
 
   function resetSecret() {
@@ -188,17 +223,27 @@ export default function Home() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://… (YouTube, article, etc.)"
           style={inputStyle}
+          disabled={!!book}
+        />
+        <input
+          type="text"
+          value={book}
+          onChange={(e) => setBook(e.target.value)}
+          placeholder="Book (optional — append passage to this book's note)"
+          style={inputStyle}
         />
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Or jot a note / paste text…"
+          placeholder={
+            book ? "Paste the passage from the book…" : "Or jot a note / paste text…"
+          }
           rows={6}
           style={{ ...inputStyle, fontFamily: "inherit", resize: "vertical" }}
         />
         <button
           type="submit"
-          disabled={submitting || (!url && !text)}
+          disabled={submitting || (!url && !text) || (!!book && !text)}
           style={{
             padding: "0.6rem 1rem",
             background: "#111",
@@ -207,13 +252,78 @@ export default function Home() {
             borderRadius: 6,
             fontSize: "1rem",
             cursor: submitting ? "not-allowed" : "pointer",
-            opacity: submitting || (!url && !text) ? 0.6 : 1,
+            opacity:
+              submitting || (!url && !text) || (!!book && !text) ? 0.6 : 1,
           }}
         >
-          {submitting ? "Capturing…" : "Capture"}
+          {submitting ? "Capturing…" : book ? "Capture passage" : "Capture"}
         </button>
         {status && <p style={{ color: "#1a7f37", margin: 0 }}>{status}</p>}
         {error && <p style={{ color: "#c00", margin: 0 }}>Error: {error}</p>}
+        {bookSuggestion && (
+          <div
+            style={{
+              border: "1px solid #e0c97a",
+              background: "#fff8e6",
+              padding: "0.75rem",
+              borderRadius: 6,
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.5rem",
+            }}
+          >
+            <div>
+              Did you mean <strong>{bookSuggestion.suggested}</strong>? You
+              typed <em>{bookSuggestion.typed}</em>.
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                type="button"
+                onClick={() => confirmWithBook(bookSuggestion.suggested)}
+                disabled={submitting}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  background: "#111",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                }}
+              >
+                Use &ldquo;{bookSuggestion.suggested}&rdquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmWithBook(bookSuggestion.typed)}
+                disabled={submitting}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  background: "#fff",
+                  border: "1px solid #ccc",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                }}
+              >
+                Keep &ldquo;{bookSuggestion.typed}&rdquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => setBookSuggestion(null)}
+                disabled={submitting}
+                style={{
+                  marginLeft: "auto",
+                  padding: "0.35rem 0.75rem",
+                  background: "none",
+                  border: "none",
+                  color: "#888",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </form>
 
       <section style={{ marginTop: "2.5rem" }}>

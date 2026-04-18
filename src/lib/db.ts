@@ -25,6 +25,7 @@ export const learnings = pgTable("learnings", {
   takeaways: jsonb("takeaways").$type<string[]>(),
   tags: text("tags").array(),
   markdownPath: text("markdown_path"),
+  book: text("book"),
 });
 
 export type Learning = typeof learnings.$inferSelect;

@@ -99,6 +99,70 @@ export async function summarize(input: SummarizeInput): Promise<Summary> {
   return normalizeSummary(parsed, input);
 }
 
+const BOOK_SYSTEM_PROMPT = `You are a careful note-taker helping the user build a \
+personal reading log for books. The user has pasted a passage, chapter excerpt, or \
+paragraph from a book. Your job is to summarize THIS specific passage (not the whole \
+book), while using its context within the book. Return strict JSON with this shape:
+
+{
+  "title": string,             // a short, descriptive heading for this passage (e.g. "Chapter 3: Orthogonality" or a phrase that captures the passage's core idea)
+  "tldr": string,              // 1-3 sentences distilling the passage's point
+  "detailedSummary": string,   // 200-600 words walking through the passage's argument or narrative. Preserve specific terms, names, and direct quotes from the passage. Use \\n\\n between paragraphs
+  "takeaways": string[],       // 3-8 bullets. Each bullet states an idea from the passage plus a supporting detail or example from the text
+  "tags": string[],            // 2-6 lowercase, hyphenated topical tags (no '#')
+  "whyItMatters": string       // 1-3 sentences on how this passage connects to the book's broader argument or to the reader's life
+}
+
+Be faithful to what's in the passage. Do not invent context from outside the text. \
+If the passage is short, scale down proportionally. No markdown inside string values, \
+no extra keys, no preamble.`;
+
+export type BookPassageInput = {
+  book: string;
+  text: string;
+};
+
+export async function summarizeBookPassage(
+  input: BookPassageInput
+): Promise<Summary> {
+  if (!process.env.DEEPSEEK_API_KEY) {
+    throw new Error("DEEPSEEK_API_KEY is not set");
+  }
+
+  const userPrompt = [
+    `Book: ${input.book}`,
+    "",
+    "Passage:",
+    truncate(input.text),
+  ].join("\n");
+
+  const completion = await deepseek.chat.completions.create({
+    model: DEEPSEEK_MODEL,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: BOOK_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) throw new Error("DeepSeek returned no content");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`DeepSeek did not return valid JSON: ${raw.slice(0, 200)}`);
+  }
+
+  return normalizeSummary(parsed, {
+    text: input.text,
+    source: "book",
+    title: undefined,
+    url: undefined,
+  });
+}
+
 function normalizeSummary(raw: unknown, input: SummarizeInput): Summary {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Record<
     string,

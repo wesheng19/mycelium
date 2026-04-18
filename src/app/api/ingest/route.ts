@@ -1,12 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { handleYouTube, isYouTubeUrl } from "@/lib/ingest/youtube";
 import { handleAppleNews, isAppleNewsUrl } from "@/lib/ingest/appleNews";
 import { handleArticle } from "@/lib/ingest/article";
 import { handleText } from "@/lib/ingest/text";
 import { IngestError } from "@/lib/ingest/errors";
-import { summarize } from "@/lib/deepseek";
+import { summarize, summarizeBookPassage } from "@/lib/deepseek";
 import { buildMarkdown, vaultPath } from "@/lib/markdown";
 import { commitNote } from "@/lib/vault";
+import { appendBookSection } from "@/lib/bookVault";
+import { matchBook } from "@/lib/books";
 import { db, learnings } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -16,6 +19,8 @@ export const maxDuration = 60;
 type IngestBody = {
   url?: string | string[];
   text?: string;
+  book?: string;
+  confirmBook?: boolean;
 };
 
 function firstString(v: unknown): string | undefined {
@@ -52,6 +57,11 @@ export async function POST(req: Request) {
 
   const url = firstString(body.url);
   const text = typeof body.text === "string" ? body.text.trim() || undefined : undefined;
+  const book =
+    typeof body.book === "string" && body.book.trim()
+      ? body.book.trim()
+      : undefined;
+  const confirmBook = body.confirmBook === true;
 
   if (!url && !text) {
     return NextResponse.json(
@@ -59,8 +69,24 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  if (book && url) {
+    return NextResponse.json(
+      { error: "Use `book` with pasted `text`, not a `url`." },
+      { status: 400 }
+    );
+  }
+  if (book && !text) {
+    return NextResponse.json(
+      { error: "Book ingest requires pasted `text`." },
+      { status: 400 }
+    );
+  }
 
   try {
+    if (book) {
+      return await ingestBookPassage(text!, book, confirmBook);
+    }
+
     const normalized = url
       ? isYouTubeUrl(url)
         ? await handleYouTube(url)
@@ -116,3 +142,61 @@ export async function POST(req: Request) {
     );
   }
 }
+
+async function ingestBookPassage(
+  text: string,
+  bookInput: string,
+  confirmed: boolean
+) {
+  const match = await matchBook(bookInput);
+  if (match.kind === "suggestion" && !confirmed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        needsBookConfirmation: true,
+        typed: bookInput,
+        suggested: match.canonical,
+        message: `Did you mean "${match.canonical}"?`,
+      },
+      { status: 409 }
+    );
+  }
+
+  const canonical =
+    match.kind === "exact"
+      ? match.canonical
+      : match.kind === "suggestion"
+        ? match.canonical
+        : bookInput;
+
+  const summary = await summarizeBookPassage({
+    book: canonical,
+    text,
+  });
+
+  const entryId = randomUUID();
+  const now = new Date();
+  const path = await appendBookSection(canonical, entryId, summary, now);
+
+  if (db) {
+    await db.insert(learnings).values({
+      id: entryId,
+      source: "book",
+      url: null,
+      title: summary.title,
+      tldr: summary.tldr,
+      takeaways: summary.takeaways,
+      tags: summary.tags,
+      markdownPath: path,
+      book: canonical,
+    });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    path,
+    book: canonical,
+    summary,
+  });
+}
+
