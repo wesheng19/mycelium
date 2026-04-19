@@ -47,6 +47,13 @@ function buildSection(
   if (summary.whyItMatters) {
     lines.push("### Why this matters", summary.whyItMatters, "");
   }
+  if (summary.vocabulary.length) {
+    lines.push("### Appendix — Vocabulary");
+    for (const v of summary.vocabulary) {
+      lines.push(`- **${v.word}** — ${v.explanation}`);
+    }
+    lines.push("");
+  }
   if (summary.tags.length) {
     lines.push(summary.tags.map((t) => `#${t}`).join(" "), "");
   }

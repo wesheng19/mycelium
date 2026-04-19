@@ -78,6 +78,15 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
     "## Why this matters",
     summary.whyItMatters || "_(not provided)_",
     "",
+    ...(summary.vocabulary.length
+      ? [
+          "## Appendix — Vocabulary",
+          ...summary.vocabulary.map(
+            (v) => `- **${v.word}** — ${v.explanation}`
+          ),
+          "",
+        ]
+      : []),
   ];
 
   return [...fm, ...body].join("\n");
