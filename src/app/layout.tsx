@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mycelium",
+  title: "Mycelium — Field Journal",
   description: "Personal second brain — capture daily learnings.",
 };
 
@@ -12,18 +13,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          fontFamily:
-            "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-          margin: 0,
-          background: "#fafafa",
-          color: "#111",
-        }}
-      >
-        <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1rem" }}>
-          {children}
-        </main>
+      <body data-threads="on" data-grain="on" data-accent="rust">
+        {children}
       </body>
     </html>
   );
