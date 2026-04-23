@@ -8,6 +8,7 @@ import { IngestError } from "@/lib/ingest/errors";
 import { summarize, summarizeBookPassage } from "@/lib/deepseek";
 import { enrichVocabulary } from "@/lib/agent/vocabulary";
 import { findRelatedNotes } from "@/lib/agent/relatedNotes";
+import { buildReferences } from "@/lib/agent/references";
 import { buildMarkdown, vaultPath } from "@/lib/markdown";
 import { commitNote } from "@/lib/vault";
 import { appendBookSection } from "@/lib/bookVault";
@@ -111,6 +112,14 @@ export async function POST(req: Request) {
 
     const related = await findRelatedNotes({ summary });
 
+    const references =
+      normalized.source === "article" && normalized.bodyLinks?.length
+        ? await buildReferences({
+            summary,
+            bodyLinks: normalized.bodyLinks,
+          })
+        : [];
+
     const now = new Date();
     const path = vaultPath(now, summary.title);
     const markdown = buildMarkdown({
@@ -119,6 +128,7 @@ export async function POST(req: Request) {
       url: normalized.url,
       date: now,
       related,
+      references,
       selfPath: path,
     });
 

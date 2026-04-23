@@ -1,6 +1,7 @@
 import { posix as path } from "node:path";
 import type { Summary } from "./deepseek";
 import type { RelatedNote } from "./agent/relatedNotes";
+import type { ReferenceEntry } from "./agent/references";
 import { PACIFIC } from "./tz";
 
 export type MarkdownBuildInput = {
@@ -9,6 +10,7 @@ export type MarkdownBuildInput = {
   url?: string;
   date: Date;
   related?: RelatedNote[];
+  references?: ReferenceEntry[];
   /** Path of the new note itself, used to compute relative links. */
   selfPath?: string;
 };
@@ -53,7 +55,7 @@ function yamlString(s: string): string {
 }
 
 export function buildMarkdown(input: MarkdownBuildInput): string {
-  const { summary, source, url, date, related, selfPath } = input;
+  const { summary, source, url, date, related, references, selfPath } = input;
   const { iso } = dateParts(date);
 
   const fm: string[] = [
@@ -95,6 +97,15 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
               : r.markdownPath;
             return `- [${r.title}](${target}) — ${r.reason}`;
           }),
+          "",
+        ]
+      : []),
+    ...(references?.length
+      ? [
+          "## References",
+          ...references.map(
+            (r) => `- [${r.title}](${r.url}) — ${r.context}`
+          ),
           "",
         ]
       : []),
