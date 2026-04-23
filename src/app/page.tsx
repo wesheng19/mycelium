@@ -155,21 +155,21 @@ export default function Home() {
   // ---- mode switching clears irrelevant fields ----
   function switchMode(next: Mode) {
     setMode(next);
-    if (next === "book") {
-      setUrl("");
-    } else if (next === "note") {
+    if (next === "note") {
       setUrl("");
       setBook("");
-    } else {
+    } else if (next !== "book") {
+      // link/video: keep url, clear book
       setBook("");
     }
+    // book: keep both — user picks URL or passage
   }
 
   const canSubmit =
     mode === "link" || mode === "video"
       ? !!url
       : mode === "book"
-      ? !!(book && text)
+      ? !!(book && (url || text) && !(url && text))
       : mode === "note"
       ? !!text
       : false;
@@ -275,14 +275,18 @@ export default function Home() {
     if (mode === "link" || mode === "video") {
       await submitIngest({ url });
     } else if (mode === "book") {
-      await submitIngest({ book, text });
+      await submitIngest(url ? { book, url } : { book, text });
     } else {
       await submitIngest({ text });
     }
   }
 
   async function confirmWithBook(chosen: string) {
-    await submitIngest({ text, book: chosen, confirmBook: true });
+    await submitIngest(
+      url
+        ? { url, book: chosen, confirmBook: true }
+        : { text, book: chosen, confirmBook: true }
+    );
   }
 
   // ---- delete ----
@@ -447,17 +451,31 @@ export default function Home() {
           )}
 
           {mode === "book" && (
-            <div className="field with-icon">
-              <span className="field-icon" aria-hidden><IconBook /></span>
-              <label>Book title</label>
-              <input
-                type="text"
-                value={book}
-                onChange={(e) => setBook(e.target.value)}
-                placeholder="e.g. The Whole-Brain Child"
-                autoFocus
-              />
-            </div>
+            <>
+              <div className="field with-icon">
+                <span className="field-icon" aria-hidden><IconBook /></span>
+                <label>Book title</label>
+                <input
+                  type="text"
+                  value={book}
+                  onChange={(e) => setBook(e.target.value)}
+                  placeholder="e.g. The Whole-Brain Child"
+                  autoFocus
+                />
+              </div>
+              <div className="field with-icon">
+                <span className="field-icon" aria-hidden><IconLink /></span>
+                <label>Tab URL <span className="hint">— optional, fill this OR a passage</span></label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https:// — article-style page"
+                  spellCheck={false}
+                  disabled={!!text}
+                />
+              </div>
+            </>
           )}
 
           {(mode === "note" || mode === "book") && (
@@ -472,12 +490,13 @@ export default function Home() {
                 onChange={(e) => setText(e.target.value)}
                 placeholder={
                   mode === "book"
-                    ? "Paste the passage, verbatim…"
+                    ? "…or paste a passage verbatim"
                     : "Jot a thought. Paste text. Think out loud."
                 }
                 rows={4}
                 spellCheck
                 autoFocus={mode === "note"}
+                disabled={mode === "book" && !!url}
               />
               <div className="field-meta flex-between">
                 <span>{text ? `${text.trim().split(/\s+/).filter(Boolean).length} words` : "—"}</span>

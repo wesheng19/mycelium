@@ -1,9 +1,10 @@
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { IngestError } from "./errors";
-import type { BodyLink, Normalized } from "./youtube";
+import type { BodyLink, ImageCandidate, Normalized } from "./youtube";
 
 const BODY_LINK_CAP = 12;
+const IMAGE_CANDIDATE_CAP = 25;
 
 export async function handleArticle(url: string): Promise<Normalized> {
   let res: Response;
@@ -76,6 +77,11 @@ export async function handleArticle(url: string): Promise<Normalized> {
   const bodyLinks = parsed.content
     ? extractBodyLinks(parsed.content, url)
     : [];
+  const heroImage = extractHeroImage(dom.window.document, url);
+  const bodyImages = parsed.content
+    ? extractBodyImages(parsed.content, url)
+    : [];
+  const imageCandidates = mergeImageCandidates(heroImage, bodyImages);
 
   return {
     title: parsed.title ?? undefined,
@@ -83,6 +89,7 @@ export async function handleArticle(url: string): Promise<Normalized> {
     source: "article",
     url,
     bodyLinks,
+    imageCandidates,
   };
 }
 
@@ -124,4 +131,78 @@ function extractBodyLinks(htmlBody: string, baseUrl: string): BodyLink[] {
     if (out.length >= BODY_LINK_CAP) break;
   }
   return out;
+}
+
+function extractHeroImage(
+  doc: Document,
+  baseUrl: string
+): ImageCandidate | null {
+  const meta = (selector: string): string | null => {
+    const el = doc.querySelector(selector);
+    return el?.getAttribute("content")?.trim() || null;
+  };
+  const candidates = [
+    meta('meta[property="og:image"]'),
+    meta('meta[property="og:image:url"]'),
+    meta('meta[name="twitter:image"]'),
+    meta('meta[name="twitter:image:src"]'),
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const abs = absolutize(c, baseUrl);
+    if (!abs) continue;
+    const alt =
+      meta('meta[property="og:image:alt"]') ??
+      meta('meta[name="twitter:image:alt"]') ??
+      "";
+    return { url: abs, alt, isHero: true };
+  }
+  return null;
+}
+
+function extractBodyImages(
+  htmlBody: string,
+  baseUrl: string
+): ImageCandidate[] {
+  let dom: JSDOM;
+  try {
+    dom = new JSDOM(htmlBody, { url: baseUrl });
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const out: ImageCandidate[] = [];
+  for (const img of dom.window.document.querySelectorAll("img[src]")) {
+    const src = img.getAttribute("src");
+    if (!src) continue;
+    if (src.startsWith("data:")) continue;
+    const abs = absolutize(src, baseUrl);
+    if (!abs) continue;
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    const alt = (img.getAttribute("alt") ?? "").trim().slice(0, 300);
+    out.push({ url: abs, alt });
+    if (out.length >= IMAGE_CANDIDATE_CAP) break;
+  }
+  return out;
+}
+
+function mergeImageCandidates(
+  hero: ImageCandidate | null,
+  body: ImageCandidate[]
+): ImageCandidate[] {
+  if (!hero) return body;
+  // If hero appears in body too, dedupe — keep the hero entry only.
+  const filtered = body.filter((b) => b.url !== hero.url);
+  return [hero, ...filtered];
+}
+
+function absolutize(href: string, baseUrl: string): string | null {
+  try {
+    const abs = new URL(href, baseUrl);
+    if (abs.protocol !== "http:" && abs.protocol !== "https:") return null;
+    return abs.toString();
+  } catch {
+    return null;
+  }
 }

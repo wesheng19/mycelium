@@ -1,7 +1,14 @@
+import { posix as path } from "node:path";
 import { Octokit } from "@octokit/rest";
 import type { Summary } from "./deepseek";
 import { slugify, dateParts } from "./markdown";
+import type { StoredImage } from "./images/store";
 import { deleteNote } from "./vault";
+
+export type BookEntryExtras = {
+  url?: string;
+  images?: StoredImage[];
+};
 
 function getOctokit() {
   const token = process.env.GITHUB_TOKEN;
@@ -25,7 +32,9 @@ export function bookPath(bookTitle: string): string {
 function buildSection(
   entryId: string,
   summary: Summary,
-  date: Date
+  date: Date,
+  bookFilePath: string,
+  extras: BookEntryExtras
 ): string {
   const { iso } = dateParts(date);
   const lines: string[] = [
@@ -33,6 +42,16 @@ function buildSection(
     `## ${iso} — ${summary.title}`,
     "",
   ];
+  if (extras.url) {
+    lines.push(`Source: ${extras.url}`, "");
+  }
+  if (extras.images?.length) {
+    const [hero, ...rest] = extras.images;
+    lines.push(imageMarkdown(hero, bookFilePath), "");
+    for (const img of rest) {
+      lines.push(imageMarkdown(img, bookFilePath), "");
+    }
+  }
   if (summary.tldr) {
     lines.push(`**TL;DR** ${summary.tldr}`, "");
   }
@@ -61,6 +80,12 @@ function buildSection(
   return lines.join("\n");
 }
 
+function imageMarkdown(image: StoredImage, fromPath: string): string {
+  const rel = path.relative(path.dirname(fromPath), image.vaultPath) || image.vaultPath;
+  const alt = image.alt.trim().replace(/[\[\]]/g, "");
+  return `![${alt}](${rel})`;
+}
+
 function buildHeader(bookTitle: string, date: Date): string {
   const { iso } = dateParts(date);
   return [
@@ -83,16 +108,17 @@ export async function appendBookSection(
   bookTitle: string,
   entryId: string,
   summary: Summary,
-  date: Date
+  date: Date,
+  extras: BookEntryExtras = {}
 ): Promise<string> {
-  const path = bookPath(bookTitle);
+  const filePath = bookPath(bookTitle);
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
 
   let existingSha: string | undefined;
   let existingBody = "";
   try {
-    const existing = await octokit.repos.getContent({ owner, repo, path });
+    const existing = await octokit.repos.getContent({ owner, repo, path: filePath });
     if (!Array.isArray(existing.data) && "sha" in existing.data) {
       existingSha = existing.data.sha;
       if ("content" in existing.data && existing.data.content) {
@@ -105,7 +131,7 @@ export async function appendBookSection(
     // file doesn't exist yet — we'll create it
   }
 
-  const section = buildSection(entryId, summary, date);
+  const section = buildSection(entryId, summary, date, filePath, extras);
   const newBody = existingBody
     ? `${existingBody.replace(/\s+$/, "")}\n\n${section}\n`
     : `${buildHeader(bookTitle, date)}${section}\n`;
@@ -113,15 +139,15 @@ export async function appendBookSection(
   await octokit.repos.createOrUpdateFileContents({
     owner,
     repo,
-    path,
+    path: filePath,
     message: existingSha
-      ? `append to ${path}`
-      : `create ${path}`,
+      ? `append to ${filePath}`
+      : `create ${filePath}`,
     content: Buffer.from(newBody, "utf8").toString("base64"),
     sha: existingSha,
   });
 
-  return path;
+  return filePath;
 }
 
 /**

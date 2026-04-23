@@ -6,12 +6,19 @@ export type BodyLink = {
   anchorText: string;
 };
 
+export type ImageCandidate = {
+  url: string;
+  alt: string;
+  isHero?: boolean;
+};
+
 export type Normalized = {
   title?: string;
   content: string;
   source: "youtube" | "article" | "text";
   url?: string;
   bodyLinks?: BodyLink[];
+  imageCandidates?: ImageCandidate[];
 };
 
 const YOUTUBE_HOSTS = new Set([

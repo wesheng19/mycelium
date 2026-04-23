@@ -9,6 +9,7 @@ import { summarize, summarizeBookPassage } from "@/lib/deepseek";
 import { enrichVocabulary } from "@/lib/agent/vocabulary";
 import { findRelatedNotes } from "@/lib/agent/relatedNotes";
 import { buildReferences } from "@/lib/agent/references";
+import { processArticleImages, processBookImages } from "@/lib/images/pipeline";
 import { buildMarkdown, vaultPath } from "@/lib/markdown";
 import { commitNote } from "@/lib/vault";
 import { appendBookSection } from "@/lib/bookVault";
@@ -72,22 +73,33 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (book && url) {
+  if (book && url && text) {
     return NextResponse.json(
-      { error: "Use `book` with pasted `text`, not a `url`." },
+      { error: "Use `book` with either a `url` or pasted `text`, not both." },
       { status: 400 }
     );
   }
-  if (book && !text) {
+  if (book && !text && !url) {
     return NextResponse.json(
-      { error: "Book ingest requires pasted `text`." },
+      { error: "Book ingest requires `text` or `url`." },
+      { status: 400 }
+    );
+  }
+  if (book && url && (isYouTubeUrl(url) || isAppleNewsUrl(url))) {
+    return NextResponse.json(
+      {
+        error:
+          "Book mode supports article URLs only — not YouTube or Apple News.",
+      },
       { status: 400 }
     );
   }
 
   try {
     if (book) {
-      return await ingestBookPassage(text!, book, confirmBook);
+      return text
+        ? await ingestBookPassage(text, book, confirmBook)
+        : await ingestBookFromUrl(url!, book, confirmBook);
     }
 
     const normalized = url
@@ -121,6 +133,15 @@ export async function POST(req: Request) {
         : [];
 
     const now = new Date();
+    const images =
+      normalized.source === "article" && normalized.imageCandidates?.length
+        ? await processArticleImages({
+            candidates: normalized.imageCandidates,
+            summary,
+            date: now,
+          })
+        : [];
+
     const path = vaultPath(now, summary.title);
     const markdown = buildMarkdown({
       summary,
@@ -129,6 +150,7 @@ export async function POST(req: Request) {
       date: now,
       related,
       references,
+      images,
       selfPath: path,
     });
 
@@ -169,26 +191,9 @@ async function ingestBookPassage(
   bookInput: string,
   confirmed: boolean
 ) {
-  const match = await matchBook(bookInput);
-  if (match.kind === "suggestion" && !confirmed) {
-    return NextResponse.json(
-      {
-        ok: false,
-        needsBookConfirmation: true,
-        typed: bookInput,
-        suggested: match.canonical,
-        message: `Did you mean "${match.canonical}"?`,
-      },
-      { status: 409 }
-    );
-  }
-
-  const canonical =
-    match.kind === "exact"
-      ? match.canonical
-      : match.kind === "suggestion"
-        ? match.canonical
-        : bookInput;
+  const resolved = await resolveBook(bookInput, confirmed);
+  if (resolved.kind === "needsConfirmation") return resolved.response;
+  const canonical = resolved.canonical;
 
   const summary = await summarizeBookPassage({
     book: canonical,
@@ -224,5 +229,95 @@ async function ingestBookPassage(
     book: canonical,
     summary,
   });
+}
+
+async function ingestBookFromUrl(
+  url: string,
+  bookInput: string,
+  confirmed: boolean
+) {
+  const resolved = await resolveBook(bookInput, confirmed);
+  if (resolved.kind === "needsConfirmation") return resolved.response;
+  const canonical = resolved.canonical;
+
+  const normalized = await handleArticle(url);
+
+  const summary = await summarizeBookPassage({
+    book: canonical,
+    text: normalized.content,
+  });
+
+  summary.vocabulary = await enrichVocabulary({
+    text: normalized.content,
+    candidates: summary.vocabulary,
+  });
+
+  const now = new Date();
+  const images = normalized.imageCandidates?.length
+    ? await processBookImages({
+        candidates: normalized.imageCandidates,
+        date: now,
+      })
+    : [];
+
+  const entryId = randomUUID();
+  const path = await appendBookSection(canonical, entryId, summary, now, {
+    url,
+    images,
+  });
+
+  if (db) {
+    await db.insert(learnings).values({
+      id: entryId,
+      source: "book",
+      url,
+      title: summary.title,
+      tldr: summary.tldr,
+      takeaways: summary.takeaways,
+      tags: summary.tags,
+      markdownPath: path,
+      book: canonical,
+    });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    path,
+    book: canonical,
+    summary,
+  });
+}
+
+type ResolvedBook =
+  | { kind: "ok"; canonical: string }
+  | { kind: "needsConfirmation"; response: NextResponse };
+
+async function resolveBook(
+  bookInput: string,
+  confirmed: boolean
+): Promise<ResolvedBook> {
+  const match = await matchBook(bookInput);
+  if (match.kind === "suggestion" && !confirmed) {
+    return {
+      kind: "needsConfirmation",
+      response: NextResponse.json(
+        {
+          ok: false,
+          needsBookConfirmation: true,
+          typed: bookInput,
+          suggested: match.canonical,
+          message: `Did you mean "${match.canonical}"?`,
+        },
+        { status: 409 }
+      ),
+    };
+  }
+  const canonical =
+    match.kind === "exact"
+      ? match.canonical
+      : match.kind === "suggestion"
+        ? match.canonical
+        : bookInput;
+  return { kind: "ok", canonical };
 }
 
