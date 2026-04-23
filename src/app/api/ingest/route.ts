@@ -6,6 +6,7 @@ import { handleArticle } from "@/lib/ingest/article";
 import { handleText } from "@/lib/ingest/text";
 import { IngestError } from "@/lib/ingest/errors";
 import { summarize, summarizeBookPassage } from "@/lib/deepseek";
+import { enrichVocabulary } from "@/lib/agent/vocabulary";
 import { buildMarkdown, vaultPath } from "@/lib/markdown";
 import { commitNote } from "@/lib/vault";
 import { appendBookSection } from "@/lib/bookVault";
@@ -102,6 +103,11 @@ export async function POST(req: Request) {
       url: normalized.url,
     });
 
+    summary.vocabulary = await enrichVocabulary({
+      text: normalized.content,
+      candidates: summary.vocabulary,
+    });
+
     const now = new Date();
     const path = vaultPath(now, summary.title);
     const markdown = buildMarkdown({
@@ -172,6 +178,11 @@ async function ingestBookPassage(
   const summary = await summarizeBookPassage({
     book: canonical,
     text,
+  });
+
+  summary.vocabulary = await enrichVocabulary({
+    text,
+    candidates: summary.vocabulary,
   });
 
   const entryId = randomUUID();
