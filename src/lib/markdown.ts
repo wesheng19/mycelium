@@ -1,4 +1,6 @@
+import { posix as path } from "node:path";
 import type { Summary } from "./deepseek";
+import type { RelatedNote } from "./agent/relatedNotes";
 import { PACIFIC } from "./tz";
 
 export type MarkdownBuildInput = {
@@ -6,6 +8,9 @@ export type MarkdownBuildInput = {
   source: string;
   url?: string;
   date: Date;
+  related?: RelatedNote[];
+  /** Path of the new note itself, used to compute relative links. */
+  selfPath?: string;
 };
 
 export function slugify(input: string, max = 60): string {
@@ -48,7 +53,7 @@ function yamlString(s: string): string {
 }
 
 export function buildMarkdown(input: MarkdownBuildInput): string {
-  const { summary, source, url, date } = input;
+  const { summary, source, url, date, related, selfPath } = input;
   const { iso } = dateParts(date);
 
   const fm: string[] = [
@@ -58,6 +63,9 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
   ];
   if (url) fm.push(`url: ${yamlString(url)}`);
   fm.push(`tags: ${yamlList(summary.tags)}`);
+  if (related?.length) {
+    fm.push(`related: ${yamlList(related.map((r) => r.markdownPath))}`);
+  }
   fm.push("---");
 
   const body: string[] = [
@@ -78,6 +86,18 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
     "## Why this matters",
     summary.whyItMatters || "_(not provided)_",
     "",
+    ...(related?.length
+      ? [
+          "## Related",
+          ...related.map((r) => {
+            const target = selfPath
+              ? relativeVaultLink(selfPath, r.markdownPath)
+              : r.markdownPath;
+            return `- [${r.title}](${target}) — ${r.reason}`;
+          }),
+          "",
+        ]
+      : []),
     ...(summary.vocabulary.length
       ? [
           "## Appendix — Vocabulary",
@@ -90,4 +110,9 @@ export function buildMarkdown(input: MarkdownBuildInput): string {
   ];
 
   return [...fm, ...body].join("\n");
+}
+
+function relativeVaultLink(fromPath: string, toPath: string): string {
+  const rel = path.relative(path.dirname(fromPath), toPath);
+  return rel || toPath;
 }
