@@ -111,22 +111,51 @@ export async function enrichVocabulary(input: {
       stopWhen: stepCountIs(STEP_CAP),
     });
 
-    const enriched = parseJsonArray(result.text);
-    if (enriched.length === 0) {
-      console.warn(
-        "[vocab-agent] no usable JSON in response, falling back to original candidates"
-      );
-      return input.candidates;
-    }
+    const finalText = lastAssistantText(result);
+    const enriched = parseJsonArray(finalText);
+    const reconciled = reconcile(input.candidates, enriched);
+    const enrichedCount = reconciled.reduce(
+      (n, r, i) => (r.explanation !== input.candidates[i].explanation ? n + 1 : n),
+      0
+    );
     console.log(
-      `[vocab-agent] enriched ${enriched.length}/${input.candidates.length} ` +
+      `[vocab-agent] enriched ${enrichedCount}/${input.candidates.length} ` +
         `candidates over ${result.steps.length} steps`
     );
-    return enriched;
+    return reconciled;
   } catch (err) {
     console.warn("[vocab-agent] enrichment failed, using fallback:", err);
     return input.candidates;
   }
+}
+
+function lastAssistantText(result: {
+  text: string;
+  steps: ReadonlyArray<{ text: string }>;
+}): string {
+  if (result.text.trim()) return result.text;
+  for (let i = result.steps.length - 1; i >= 0; i--) {
+    const t = result.steps[i].text;
+    if (t && t.trim()) return t;
+  }
+  return "";
+}
+
+function reconcile(
+  candidates: VocabularyEntry[],
+  enriched: VocabularyEntry[]
+): VocabularyEntry[] {
+  const byKey = new Map<string, VocabularyEntry>();
+  for (const e of enriched) {
+    const key = e.word.toLowerCase().trim();
+    if (key && !byKey.has(key)) byKey.set(key, e);
+  }
+  return candidates.map((c) => {
+    const match = byKey.get(c.word.toLowerCase().trim());
+    return match?.explanation
+      ? { word: c.word, explanation: match.explanation }
+      : c;
+  });
 }
 
 function parseJsonArray(text: string): VocabularyEntry[] {
