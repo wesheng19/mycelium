@@ -4,7 +4,10 @@ import { pickArticleBodyImages } from "@/lib/agent/images";
 import { downloadImage } from "./fetch";
 import { downloadAndStoreImages, type StoredImage } from "./store";
 
-const BOOK_IMAGE_CAP = 20;
+// High cap to honor "preserve all images on the page" intent for
+// book-from-URL ingest. Acts as a safety net for pathological pages
+// (galleries, infinite scrollers) rather than a routine filter.
+const BOOK_IMAGE_CAP = 100;
 
 export async function processArticleImages(input: {
   candidates: ImageCandidate[];

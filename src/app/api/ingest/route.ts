@@ -253,9 +253,16 @@ async function ingestBookFromUrl(
   });
 
   const now = new Date();
-  const images = normalized.imageCandidates?.length
+  // Book-from-URL: archive every image from the page, not just Readability's
+  // body picks. Falls back to Readability candidates only if full-DOM
+  // extraction returned nothing (shouldn't happen for normal pages).
+  const bookImageCandidates =
+    normalized.allPageImages?.length
+      ? normalized.allPageImages
+      : (normalized.imageCandidates ?? []);
+  const images = bookImageCandidates.length
     ? await processBookImages({
-        candidates: normalized.imageCandidates,
+        candidates: bookImageCandidates,
         date: now,
       })
     : [];
