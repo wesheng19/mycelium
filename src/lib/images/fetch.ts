@@ -8,11 +8,11 @@ export type DownloadedImage = {
 };
 
 const IMAGE_TIMEOUT_MS = 5_000;
-const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
 // SVG is intentionally omitted — it can embed scripts (and Obsidian / many
 // markdown renderers display SVG inline). Only raster formats are stored.
-const EXT_BY_MIME: Record<string, string> = {
+export const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg",
   "image/png": "png",
@@ -20,6 +20,27 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/webp": "webp",
   "image/avif": "avif",
 };
+
+/**
+ * Build a DownloadedImage from raw bytes already in memory (e.g. an
+ * uploaded multipart file). Validates content-type and size; returns null
+ * on rejection so callers can skip without throwing.
+ */
+export function bytesToDownloadedImage(input: {
+  bytes: Uint8Array;
+  contentType: string;
+}): DownloadedImage | null {
+  const contentType = input.contentType.split(";")[0].trim().toLowerCase();
+  if (!contentType.startsWith("image/")) return null;
+  const ext = EXT_BY_MIME[contentType];
+  if (!ext) return null;
+  if (input.bytes.byteLength > IMAGE_MAX_BYTES) return null;
+  const hash = createHash("sha256")
+    .update(input.bytes)
+    .digest("hex")
+    .slice(0, 16);
+  return { hash, ext, contentType, bytes: input.bytes };
+}
 
 export async function downloadImage(url: string): Promise<DownloadedImage | null> {
   let res: Response;

@@ -661,6 +661,47 @@ button.mode-tile,
   color: #fff;
 }
 
+.entry-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.attach-btn {
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  color: var(--ink-3);
+  user-select: none;
+  transition: color 0.12s, background 0.12s;
+}
+.attach-btn:hover {
+  color: var(--accent);
+  background: var(--paper-tint, rgba(0, 0, 0, 0.04));
+}
+.attach-btn.busy {
+  cursor: wait;
+  opacity: 0.6;
+}
+.attach-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+.attach-status.ok {
+  color: var(--accent);
+  background: var(--paper-tint, rgba(0, 0, 0, 0.03));
+}
+.attach-status.err {
+  color: #b94a3c;
+  background: rgba(185, 74, 60, 0.06);
+}
+
 .entry-title {
   font-family: var(--serif);
   font-weight: 400;

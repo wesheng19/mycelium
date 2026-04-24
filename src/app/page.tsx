@@ -52,6 +52,13 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
 
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+  const [attachStatus, setAttachStatus] = useState<{
+    id: string;
+    ok: boolean;
+    msg: string;
+  } | null>(null);
+
   const [bookSuggestion, setBookSuggestion] = useState<{
     typed: string;
     suggested: string;
@@ -313,6 +320,48 @@ export default function Home() {
       return next;
     });
   }
+  async function attachFiles(entryId: string, fileList: FileList | null) {
+    if (!secret) {
+      setError("Missing INGEST_SECRET — refresh and enter it.");
+      return;
+    }
+    if (!fileList || fileList.length === 0) return;
+    setAttachingId(entryId);
+    setAttachStatus(null);
+    try {
+      const fd = new FormData();
+      for (const f of Array.from(fileList)) fd.append("file", f);
+      const res = await fetch(`/api/learnings/${entryId}/images`, {
+        method: "POST",
+        headers: { "x-ingest-secret": secret },
+        body: fd,
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        attached?: { vaultPath: string }[];
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error ?? `Request failed: ${res.status}`);
+      }
+      const n = data.attached?.length ?? 0;
+      setAttachStatus({
+        id: entryId,
+        ok: true,
+        msg: `Attached ${n} image${n === 1 ? "" : "s"}`,
+      });
+      window.setTimeout(() => setAttachStatus(null), 3000);
+    } catch (err) {
+      setAttachStatus({
+        id: entryId,
+        ok: false,
+        msg: err instanceof Error ? err.message : "Attach failed",
+      });
+    } finally {
+      setAttachingId(null);
+    }
+  }
+
   async function handleDelete() {
     if (!secret || selectedIds.size === 0) return;
     setDeleting(true);
@@ -667,12 +716,43 @@ export default function Home() {
                         <span className="dot">·</span>
                         <span className="rel-time">{relTime(entry.createdAt)}</span>
                       </div>
-                      {selectMode && (
-                        <span className={`check ${isSel ? "on" : ""}`} aria-hidden>
-                          {isSel ? "✓" : ""}
-                        </span>
-                      )}
+                      <div className="entry-top-right">
+                        {!selectMode && (
+                          <label
+                            className={`attach-btn ${attachingId === entry.id ? "busy" : ""}`}
+                            title="Attach images to this entry"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
+                              hidden
+                              disabled={attachingId === entry.id}
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                e.target.value = "";
+                                void attachFiles(entry.id, files);
+                              }}
+                            />
+                            {attachingId === entry.id ? "…" : "📎"}
+                          </label>
+                        )}
+                        {selectMode && (
+                          <span className={`check ${isSel ? "on" : ""}`} aria-hidden>
+                            {isSel ? "✓" : ""}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    {attachStatus?.id === entry.id && (
+                      <div
+                        className={`attach-status ${attachStatus.ok ? "ok" : "err"}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {attachStatus.msg}
+                      </div>
+                    )}
 
                     <h3 className="entry-title">{entry.title}</h3>
 
