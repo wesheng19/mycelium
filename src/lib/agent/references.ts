@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
-import type { Summary } from "@/lib/deepseek";
+import { DEEPSEEK_MODEL, type Summary } from "@/lib/deepseek";
 import type { BodyLink } from "@/lib/ingest/youtube";
 
 export type ReferenceEntry = {
@@ -83,7 +83,7 @@ export async function buildReferences(input: {
 
   try {
     const result = await generateText({
-      model: deepseek("deepseek-chat"),
+      model: deepseek(DEEPSEEK_MODEL),
       system: SYSTEM_PROMPT,
       messages: [
         {
