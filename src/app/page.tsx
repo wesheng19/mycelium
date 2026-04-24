@@ -155,23 +155,30 @@ export default function Home() {
   // ---- mode switching clears irrelevant fields ----
   function switchMode(next: Mode) {
     setMode(next);
-    if (next === "book") {
-      setUrl("");
-    } else if (next === "note") {
+    if (next === "note") {
       setUrl("");
       setBook("");
-    } else {
+    } else if (next !== "book") {
+      // link/video: keep url, clear book
       setBook("");
     }
+    // book: keep both — user picks URL or passage
   }
 
+  const trimmedUrl = url.trim();
+  const trimmedText = text.trim();
+  const trimmedBook = book.trim();
   const canSubmit =
     mode === "link" || mode === "video"
-      ? !!url
+      ? !!trimmedUrl
       : mode === "book"
-      ? !!(book && text)
+      ? !!(
+          trimmedBook &&
+          (trimmedUrl || trimmedText) &&
+          !(trimmedUrl && trimmedText)
+        )
       : mode === "note"
-      ? !!text
+      ? !!trimmedText
       : false;
 
   // ---- submit (preserves real API behavior) ----
@@ -273,16 +280,24 @@ export default function Home() {
     e?.preventDefault();
     if (!canSubmit || submitting) return;
     if (mode === "link" || mode === "video") {
-      await submitIngest({ url });
+      await submitIngest({ url: trimmedUrl });
     } else if (mode === "book") {
-      await submitIngest({ book, text });
+      await submitIngest(
+        trimmedUrl
+          ? { book: trimmedBook, url: trimmedUrl }
+          : { book: trimmedBook, text: trimmedText }
+      );
     } else {
-      await submitIngest({ text });
+      await submitIngest({ text: trimmedText });
     }
   }
 
   async function confirmWithBook(chosen: string) {
-    await submitIngest({ text, book: chosen, confirmBook: true });
+    await submitIngest(
+      trimmedUrl
+        ? { url: trimmedUrl, book: chosen, confirmBook: true }
+        : { text: trimmedText, book: chosen, confirmBook: true }
+    );
   }
 
   // ---- delete ----
@@ -435,10 +450,10 @@ export default function Home() {
                 spellCheck={false}
                 autoFocus
               />
-              {url && (
+              {trimmedUrl && (
                 <div className="field-meta">
                   <span className="src-glyph">{mode === "video" ? "▶" : "↗"}</span>
-                  <span>{domainOf(url)}</span>
+                  <span>{domainOf(trimmedUrl)}</span>
                   <span className="dot-sep">·</span>
                   <span>we&rsquo;ll fetch{mode === "video" ? " + transcribe" : ""} + distill</span>
                 </div>
@@ -447,17 +462,31 @@ export default function Home() {
           )}
 
           {mode === "book" && (
-            <div className="field with-icon">
-              <span className="field-icon" aria-hidden><IconBook /></span>
-              <label>Book title</label>
-              <input
-                type="text"
-                value={book}
-                onChange={(e) => setBook(e.target.value)}
-                placeholder="e.g. The Whole-Brain Child"
-                autoFocus
-              />
-            </div>
+            <>
+              <div className="field with-icon">
+                <span className="field-icon" aria-hidden><IconBook /></span>
+                <label>Book title</label>
+                <input
+                  type="text"
+                  value={book}
+                  onChange={(e) => setBook(e.target.value)}
+                  placeholder="e.g. The Whole-Brain Child"
+                  autoFocus
+                />
+              </div>
+              <div className="field with-icon">
+                <span className="field-icon" aria-hidden><IconLink /></span>
+                <label>Tab URL <span className="hint">— optional, fill this OR a passage</span></label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https:// — article-style page"
+                  spellCheck={false}
+                  disabled={!!trimmedText}
+                />
+              </div>
+            </>
           )}
 
           {(mode === "note" || mode === "book") && (
@@ -472,12 +501,13 @@ export default function Home() {
                 onChange={(e) => setText(e.target.value)}
                 placeholder={
                   mode === "book"
-                    ? "Paste the passage, verbatim…"
+                    ? "…or paste a passage verbatim"
                     : "Jot a thought. Paste text. Think out loud."
                 }
                 rows={4}
                 spellCheck
                 autoFocus={mode === "note"}
+                disabled={mode === "book" && !!trimmedUrl}
               />
               <div className="field-meta flex-between">
                 <span>{text ? `${text.trim().split(/\s+/).filter(Boolean).length} words` : "—"}</span>

@@ -8,7 +8,7 @@ Personal knowledge capture system. Ingest a URL (article or YouTube video) or pl
 - **Database**: PostgreSQL on Neon (`@neondatabase/serverless`) with Drizzle ORM
 - **LLM**: DeepSeek Chat API (via OpenAI-compatible client)
 - **Vault**: GitHub repo (`wesheng19/mycelium-vault`) via Octokit — markdown notes committed directly
-- **Content extraction**: `@mozilla/readability` + `jsdom` for articles, `youtube-transcript` for YouTube
+- **Content extraction**: `@mozilla/readability` + `jsdom` for articles, `youtubei.js` (Innertube) for YouTube transcripts with Modal/AssemblyAI as a documented but currently-unused fallback
 - **Language**: TypeScript 5.7, React 19
 
 ## Project Structure

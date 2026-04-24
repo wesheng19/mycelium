@@ -1,11 +1,24 @@
 import { Innertube } from "youtubei.js";
 import { IngestError } from "./errors";
 
+export type BodyLink = {
+  url: string;
+  anchorText: string;
+};
+
+export type ImageCandidate = {
+  url: string;
+  alt: string;
+  isHero?: boolean;
+};
+
 export type Normalized = {
   title?: string;
   content: string;
   source: "youtube" | "article" | "text";
   url?: string;
+  bodyLinks?: BodyLink[];
+  imageCandidates?: ImageCandidate[];
 };
 
 const YOUTUBE_HOSTS = new Set([
