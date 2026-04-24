@@ -1,7 +1,7 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import { z } from "zod";
-import type { Summary } from "@/lib/deepseek";
+import { DEEPSEEK_MODEL, type Summary } from "@/lib/deepseek";
 import {
   getNoteSummary,
   searchByQuery,
@@ -124,7 +124,7 @@ export async function findRelatedNotes(input: {
 
   try {
     const result = await generateText({
-      model: deepseek("deepseek-chat"),
+      model: deepseek(DEEPSEEK_MODEL),
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `New note:\n${newNoteContext}` }],
       tools,

@@ -1,7 +1,7 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
 import { z } from "zod";
-import type { VocabularyEntry } from "@/lib/deepseek";
+import { DEEPSEEK_MODEL, type VocabularyEntry } from "@/lib/deepseek";
 
 type DictDefinition = { definition?: string; example?: string };
 type DictMeaning = { partOfSpeech?: string; definitions?: DictDefinition[] };
@@ -97,7 +97,7 @@ export async function enrichVocabulary(input: {
 
   try {
     const result = await generateText({
-      model: deepseek("deepseek-chat"),
+      model: deepseek(DEEPSEEK_MODEL),
       system: SYSTEM_PROMPT,
       messages: [
         {
