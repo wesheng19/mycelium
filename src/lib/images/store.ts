@@ -41,7 +41,12 @@ export async function commitImage(
   try {
     await octokit.repos.getContent({ owner, repo, path });
     return true;
-  } catch {
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (status !== 404) {
+      console.warn(`[images] existence check failed for ${path}:`, err);
+      return false;
+    }
     // 404 — fall through and create
   }
 
@@ -74,27 +79,44 @@ export async function commitImage(
   }
 }
 
+const COMMIT_CONCURRENCY = 3;
+
 export async function downloadAndStoreImages(
   picks: { url: string; alt: string }[],
   date: Date,
   downloader: (url: string) => Promise<DownloadedImage | null>
 ): Promise<StoredImage[]> {
-  const settled = await Promise.all(
-    picks.map(async (p) => {
-      const dl = await downloader(p.url);
-      if (!dl) return null;
-      const path = imageVaultPath(date, dl.hash, dl.ext);
-      const ok = await commitImage(path, dl.bytes);
-      if (!ok) return null;
-      return {
-        hash: dl.hash,
-        vaultPath: path,
-        alt: p.alt,
-        sourceUrl: p.url,
-      } satisfies StoredImage;
-    })
+  // Phase 1: download all in parallel — these are external fetches, no
+  // shared rate limit.
+  const downloads = await Promise.all(
+    picks.map(async (p) => ({ pick: p, dl: await downloader(p.url) }))
   );
+  // Phase 2: commit with bounded concurrency to stay clear of GitHub
+  // secondary rate limits when a book ingest pulls 20 images.
+  const settled: (StoredImage | null)[] = new Array(picks.length).fill(null);
+  for (let i = 0; i < downloads.length; i += COMMIT_CONCURRENCY) {
+    const slice = downloads.slice(i, i + COMMIT_CONCURRENCY);
+    const results = await Promise.all(
+      slice.map(async ({ pick, dl }) => {
+        if (!dl) return null;
+        const path = imageVaultPath(date, dl.hash, dl.ext);
+        const ok = await commitImage(path, dl.bytes);
+        if (!ok) return null;
+        return {
+          hash: dl.hash,
+          vaultPath: path,
+          alt: pick.alt,
+          sourceUrl: pick.url,
+        } satisfies StoredImage;
+      })
+    );
+    for (let j = 0; j < results.length; j++) {
+      settled[i + j] = results[j];
+    }
+  }
   // Dedupe by hash — same image shared across picks gets one entry.
+  // Order is preserved (settled is index-aligned with picks), so the
+  // smallest-index occurrence wins.
   const seen = new Set<string>();
   const out: StoredImage[] = [];
   for (const s of settled) {

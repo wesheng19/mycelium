@@ -280,19 +280,23 @@ export default function Home() {
     e?.preventDefault();
     if (!canSubmit || submitting) return;
     if (mode === "link" || mode === "video") {
-      await submitIngest({ url });
+      await submitIngest({ url: trimmedUrl });
     } else if (mode === "book") {
-      await submitIngest(url ? { book, url } : { book, text });
+      await submitIngest(
+        trimmedUrl
+          ? { book: trimmedBook, url: trimmedUrl }
+          : { book: trimmedBook, text: trimmedText }
+      );
     } else {
-      await submitIngest({ text });
+      await submitIngest({ text: trimmedText });
     }
   }
 
   async function confirmWithBook(chosen: string) {
     await submitIngest(
-      url
-        ? { url, book: chosen, confirmBook: true }
-        : { text, book: chosen, confirmBook: true }
+      trimmedUrl
+        ? { url: trimmedUrl, book: chosen, confirmBook: true }
+        : { text: trimmedText, book: chosen, confirmBook: true }
     );
   }
 
@@ -446,10 +450,10 @@ export default function Home() {
                 spellCheck={false}
                 autoFocus
               />
-              {url && (
+              {trimmedUrl && (
                 <div className="field-meta">
                   <span className="src-glyph">{mode === "video" ? "▶" : "↗"}</span>
-                  <span>{domainOf(url)}</span>
+                  <span>{domainOf(trimmedUrl)}</span>
                   <span className="dot-sep">·</span>
                   <span>we&rsquo;ll fetch{mode === "video" ? " + transcribe" : ""} + distill</span>
                 </div>

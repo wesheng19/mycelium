@@ -55,7 +55,7 @@ export async function buildReferences(input: {
   const usable = peeks.filter((p) => p.title || p.description);
   if (usable.length === 0) {
     console.log(
-      `[refs] no usable metadata across ${input.bodyLinks.length} candidate links`
+      `[refs] no usable metadata across ${candidates.length}/${input.bodyLinks.length} peeked links`
     );
     return [];
   }
@@ -106,10 +106,11 @@ export async function buildReferences(input: {
         context: pick.context,
       });
     }
+    const picked = resolved.slice(0, RESULT_LIMIT);
     console.log(
-      `[refs] picked ${resolved.length}/${usable.length} references`
+      `[refs] picked ${picked.length}/${usable.length} references`
     );
-    return resolved.slice(0, RESULT_LIMIT);
+    return picked;
   } catch (err) {
     console.warn("[refs] failed, no references added:", err);
     return [];
