@@ -12,6 +12,7 @@ export type ReferenceEntry = {
 const PEEK_TIMEOUT_MS = 3_000;
 const PEEK_MAX_BYTES = 100_000;
 const RESULT_LIMIT = 5;
+const CANDIDATE_CAP = 12;
 
 const SYSTEM_PROMPT = `You select 0-5 useful references from links found in an \
 article's body. The user just summarized the source (new note below). Pick links \
@@ -47,7 +48,10 @@ export async function buildReferences(input: {
   if (!process.env.DEEPSEEK_API_KEY) return [];
   if (input.bodyLinks.length === 0) return [];
 
-  const peeks = await Promise.all(input.bodyLinks.map(peekLink));
+  // Defensive cap — the article extractor already caps, but a future caller
+  // could pass an unbounded list. Bounds prefetch concurrency and prompt size.
+  const candidates = input.bodyLinks.slice(0, CANDIDATE_CAP);
+  const peeks = await Promise.all(candidates.map(peekLink));
   const usable = peeks.filter((p) => p.title || p.description);
   if (usable.length === 0) {
     console.log(
@@ -148,8 +152,11 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
     while (received < maxBytes) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
-      received += value.byteLength;
+      const remaining = maxBytes - received;
+      const slice =
+        value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      chunks.push(slice);
+      received += slice.byteLength;
     }
   } finally {
     await reader.cancel().catch(() => {});
@@ -157,9 +164,8 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
   const total = new Uint8Array(received);
   let offset = 0;
   for (const chunk of chunks) {
-    total.set(chunk.subarray(0, Math.min(chunk.byteLength, received - offset)), offset);
+    total.set(chunk, offset);
     offset += chunk.byteLength;
-    if (offset >= received) break;
   }
   return new TextDecoder("utf-8", { fatal: false }).decode(total);
 }

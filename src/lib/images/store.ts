@@ -55,6 +55,20 @@ export async function commitImage(
     });
     return true;
   } catch (err) {
+    // TOCTOU: a parallel ingest may have created the same content-hash file
+    // between our existence check and this write. GitHub returns 409 (or 422
+    // on some edge cases) when creating without a sha against an existing
+    // file. Re-check existence — if it's there now, the bytes are ours by
+    // construction (filename = content hash).
+    const status = (err as { status?: number })?.status;
+    if (status === 409 || status === 422) {
+      try {
+        await octokit.repos.getContent({ owner, repo, path });
+        return true;
+      } catch {
+        // still missing — fall through to error path
+      }
+    }
     console.warn(`[images] commit failed for ${path}:`, err);
     return false;
   }

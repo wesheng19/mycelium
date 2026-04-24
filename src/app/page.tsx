@@ -165,13 +165,20 @@ export default function Home() {
     // book: keep both — user picks URL or passage
   }
 
+  const trimmedUrl = url.trim();
+  const trimmedText = text.trim();
+  const trimmedBook = book.trim();
   const canSubmit =
     mode === "link" || mode === "video"
-      ? !!url
+      ? !!trimmedUrl
       : mode === "book"
-      ? !!(book && (url || text) && !(url && text))
+      ? !!(
+          trimmedBook &&
+          (trimmedUrl || trimmedText) &&
+          !(trimmedUrl && trimmedText)
+        )
       : mode === "note"
-      ? !!text
+      ? !!trimmedText
       : false;
 
   // ---- submit (preserves real API behavior) ----
@@ -472,7 +479,7 @@ export default function Home() {
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https:// — article-style page"
                   spellCheck={false}
-                  disabled={!!text}
+                  disabled={!!trimmedText}
                 />
               </div>
             </>
@@ -496,7 +503,7 @@ export default function Home() {
                 rows={4}
                 spellCheck
                 autoFocus={mode === "note"}
-                disabled={mode === "book" && !!url}
+                disabled={mode === "book" && !!trimmedUrl}
               />
               <div className="field-meta flex-between">
                 <span>{text ? `${text.trim().split(/\s+/).filter(Boolean).length} words` : "—"}</span>

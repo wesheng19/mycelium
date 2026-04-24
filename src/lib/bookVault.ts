@@ -48,8 +48,11 @@ function buildSection(
   if (extras.images?.length) {
     const [hero, ...rest] = extras.images;
     lines.push(imageMarkdown(hero, bookFilePath), "");
-    for (const img of rest) {
-      lines.push(imageMarkdown(img, bookFilePath), "");
+    if (rest.length) {
+      lines.push("### Figures", "");
+      for (const img of rest) {
+        lines.push(imageMarkdown(img, bookFilePath), "");
+      }
     }
   }
   if (summary.tldr) {
