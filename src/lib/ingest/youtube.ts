@@ -18,7 +18,10 @@ export type Normalized = {
   source: "youtube" | "article" | "text";
   url?: string;
   bodyLinks?: BodyLink[];
+  /** Hero + body images filtered by Readability — for article ingest. */
   imageCandidates?: ImageCandidate[];
+  /** Every <img> from the full document, no filtering — for book-from-URL. */
+  allPageImages?: ImageCandidate[];
 };
 
 const YOUTUBE_HOSTS = new Set([

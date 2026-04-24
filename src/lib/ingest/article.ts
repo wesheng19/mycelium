@@ -82,6 +82,7 @@ export async function handleArticle(url: string): Promise<Normalized> {
     ? extractBodyImages(parsed.content, url)
     : [];
   const imageCandidates = mergeImageCandidates(heroImage, bodyImages);
+  const allPageImages = extractAllPageImages(dom.window.document, url);
 
   return {
     title: parsed.title ?? undefined,
@@ -90,6 +91,7 @@ export async function handleArticle(url: string): Promise<Normalized> {
     url,
     bodyLinks,
     imageCandidates,
+    allPageImages,
   };
 }
 
@@ -195,6 +197,27 @@ function mergeImageCandidates(
   // If hero appears in body too, dedupe — keep the hero entry only.
   const filtered = body.filter((b) => b.url !== hero.url);
   return [hero, ...filtered];
+}
+
+/**
+ * Every <img src> from the full document, in DOM order. No filtering by
+ * Readability, parent element, size, or alt text — used by book-from-URL
+ * ingest where the user wants every image on the page archived.
+ */
+function extractAllPageImages(doc: Document, baseUrl: string): ImageCandidate[] {
+  const seen = new Set<string>();
+  const out: ImageCandidate[] = [];
+  for (const img of doc.querySelectorAll("img[src]")) {
+    const src = img.getAttribute("src");
+    if (!src || src.startsWith("data:")) continue;
+    const abs = absolutize(src, baseUrl);
+    if (!abs) continue;
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    const alt = (img.getAttribute("alt") ?? "").trim().slice(0, 300);
+    out.push({ url: abs, alt });
+  }
+  return out;
 }
 
 function absolutize(href: string, baseUrl: string): string | null {
