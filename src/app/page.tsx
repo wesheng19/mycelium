@@ -59,6 +59,11 @@ export default function Home() {
     msg: string;
   } | null>(null);
 
+  const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentLoaded, setRecentLoaded] = useState(false);
+
   const [bookSuggestion, setBookSuggestion] = useState<{
     typed: string;
     suggested: string;
@@ -320,6 +325,30 @@ export default function Home() {
       return next;
     });
   }
+  async function loadRecent() {
+    setRecentLoading(true);
+    try {
+      const res = await fetch("/api/learnings/today?days=30", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const data = (await res.json()) as { entries: Entry[] };
+      setRecentEntries(data.entries);
+      setRecentLoaded(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRecentLoading(false);
+    }
+  }
+
+  async function toggleRecent() {
+    if (!recentExpanded && !recentLoaded) {
+      await loadRecent();
+    }
+    setRecentExpanded((v) => !v);
+  }
+
   async function attachFiles(entryId: string, fileList: FileList | null) {
     if (!secret) {
       setError("Missing INGEST_SECRET — refresh and enter it.");
@@ -397,6 +426,141 @@ export default function Home() {
     });
     return c;
   }, [entries]);
+
+  const recentByDay = useMemo(() => {
+    const todayIds = new Set(entries.map((e) => e.id));
+    const groups = new Map<string, Entry[]>();
+    for (const e of recentEntries) {
+      if (todayIds.has(e.id)) continue;
+      const day = pacificDateKey(e.createdAt);
+      const list = groups.get(day);
+      if (list) list.push(e);
+      else groups.set(day, [e]);
+    }
+    return Array.from(groups.entries()).map(([day, list]) => ({ day, list }));
+  }, [recentEntries, entries]);
+
+  function renderEntry(entry: Entry, idxLabel: string) {
+    const meta = SOURCE_META[entry.source] || SOURCE_META.note;
+    const isOpen = expanded === entry.id;
+    const isSel = selectedIds.has(entry.id);
+    const isNew = justAddedId === entry.id;
+    return (
+      <li
+        key={entry.id}
+        className={`entry ${isOpen ? "open" : ""} ${isSel ? "selected" : ""} ${isNew ? "just-added" : ""}`}
+        onClick={() => {
+          if (selectMode) toggleId(entry.id);
+          else setExpanded(isOpen ? null : entry.id);
+        }}
+      >
+        <div className="entry-index">
+          <span className="idx-num">{idxLabel}</span>
+          <span className="idx-time">{clockTime(entry.createdAt)}</span>
+        </div>
+        <div className="entry-thread" aria-hidden>
+          <span className="node" />
+          <span className="line" />
+        </div>
+        <div className="entry-body">
+          <div className="entry-top">
+            <div className="entry-src">
+              <span className="glyph">{meta.glyph}</span>
+              <span className="src-label">{meta.label}</span>
+              {entry.url && (
+                <span className="src-extra">· {domainOf(entry.url)}</span>
+              )}
+              <span className="dot">·</span>
+              <span className="rel-time">{relTime(entry.createdAt)}</span>
+            </div>
+            <div className="entry-top-right">
+              {!selectMode && (
+                <label
+                  className={`attach-btn ${attachingId === entry.id ? "busy" : ""}`}
+                  title="Attach images to this entry"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
+                    hidden
+                    disabled={attachingId === entry.id}
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      e.target.value = "";
+                      void attachFiles(entry.id, files);
+                    }}
+                  />
+                  {attachingId === entry.id ? "…" : "📎"}
+                </label>
+              )}
+              {selectMode && (
+                <span className={`check ${isSel ? "on" : ""}`} aria-hidden>
+                  {isSel ? "✓" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+          {attachStatus?.id === entry.id && (
+            <div
+              className={`attach-status ${attachStatus.ok ? "ok" : "err"}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {attachStatus.msg}
+            </div>
+          )}
+          <h3 className="entry-title">{entry.title}</h3>
+          {entry.tldr && <p className="entry-tldr">{entry.tldr}</p>}
+          {entry.tags && entry.tags.length > 0 && (
+            <div className="entry-tags">
+              {entry.tags.map((t) => (
+                <span className="tag" key={t}>
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+          {isOpen && (
+            <div className="entry-expand" onClick={(e) => e.stopPropagation()}>
+              <div className="expand-grid">
+                {entry.markdownPath && (
+                  <div>
+                    <div className="meta-k">Filed</div>
+                    <div className="meta-v mono">{entry.markdownPath}</div>
+                  </div>
+                )}
+                <div>
+                  <div className="meta-k">Captured</div>
+                  <div className="meta-v mono">
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                {entry.url && (
+                  <div>
+                    <div className="meta-k">Source</div>
+                    <div className="meta-v mono">{entry.url}</div>
+                  </div>
+                )}
+              </div>
+              {entry.url && (
+                <div className="expand-actions">
+                  <a
+                    className="btn-ghost small"
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    open source ↗
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </li>
+    );
+  }
 
   return (
     <div
@@ -679,134 +843,50 @@ export default function Home() {
           </div>
         ) : (
           <ol className="entry-list">
-            {entries.map((entry, idx) => {
-              const meta = SOURCE_META[entry.source] || SOURCE_META.note;
-              const isOpen = expanded === entry.id;
-              const isSel = selectedIds.has(entry.id);
-              const isNew = justAddedId === entry.id;
-              return (
-                <li
-                  key={entry.id}
-                  className={`entry ${isOpen ? "open" : ""} ${isSel ? "selected" : ""} ${isNew ? "just-added" : ""}`}
-                  onClick={() => {
-                    if (selectMode) toggleId(entry.id);
-                    else setExpanded(isOpen ? null : entry.id);
-                  }}
-                >
-                  <div className="entry-index">
-                    <span className="idx-num">
-                      {String(entries.length - idx).padStart(2, "0")}
-                    </span>
-                    <span className="idx-time">{clockTime(entry.createdAt)}</span>
-                  </div>
-
-                  <div className="entry-thread" aria-hidden>
-                    <span className="node" />
-                    <span className="line" />
-                  </div>
-
-                  <div className="entry-body">
-                    <div className="entry-top">
-                      <div className="entry-src">
-                        <span className="glyph">{meta.glyph}</span>
-                        <span className="src-label">{meta.label}</span>
-                        {entry.url && (
-                          <span className="src-extra">· {domainOf(entry.url)}</span>
-                        )}
-                        <span className="dot">·</span>
-                        <span className="rel-time">{relTime(entry.createdAt)}</span>
-                      </div>
-                      <div className="entry-top-right">
-                        {!selectMode && (
-                          <label
-                            className={`attach-btn ${attachingId === entry.id ? "busy" : ""}`}
-                            title="Attach images to this entry"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
-                              hidden
-                              disabled={attachingId === entry.id}
-                              onChange={(e) => {
-                                const files = e.target.files;
-                                e.target.value = "";
-                                void attachFiles(entry.id, files);
-                              }}
-                            />
-                            {attachingId === entry.id ? "…" : "📎"}
-                          </label>
-                        )}
-                        {selectMode && (
-                          <span className={`check ${isSel ? "on" : ""}`} aria-hidden>
-                            {isSel ? "✓" : ""}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {attachStatus?.id === entry.id && (
-                      <div
-                        className={`attach-status ${attachStatus.ok ? "ok" : "err"}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {attachStatus.msg}
-                      </div>
-                    )}
-
-                    <h3 className="entry-title">{entry.title}</h3>
-
-                    {entry.tldr && <p className="entry-tldr">{entry.tldr}</p>}
-
-                    {entry.tags && entry.tags.length > 0 && (
-                      <div className="entry-tags">
-                        {entry.tags.map((t) => (
-                          <span className="tag" key={t}>#{t}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    {isOpen && (
-                      <div className="entry-expand" onClick={(e) => e.stopPropagation()}>
-                        <div className="expand-grid">
-                          {entry.markdownPath && (
-                            <div>
-                              <div className="meta-k">Filed</div>
-                              <div className="meta-v mono">{entry.markdownPath}</div>
-                            </div>
-                          )}
-                          <div>
-                            <div className="meta-k">Captured</div>
-                            <div className="meta-v mono">
-                              {new Date(entry.createdAt).toLocaleString()}
-                            </div>
-                          </div>
-                          {entry.url && (
-                            <div>
-                              <div className="meta-k">Source</div>
-                              <div className="meta-v mono">{entry.url}</div>
-                            </div>
-                          )}
-                        </div>
-                        {entry.url && (
-                          <div className="expand-actions">
-                            <a
-                              className="btn-ghost small"
-                              href={entry.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              open source ↗
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+            {entries.map((entry, idx) =>
+              renderEntry(entry, String(entries.length - idx).padStart(2, "0"))
+            )}
           </ol>
+        )}
+      </section>
+
+      <section className="entries">
+        <div className="entries-head">
+          <button
+            type="button"
+            className="btn-ghost small"
+            onClick={() => void toggleRecent()}
+            disabled={recentLoading}
+          >
+            {recentLoading
+              ? "loading…"
+              : recentExpanded
+                ? "hide last 30 days ↑"
+                : "show last 30 days ↓"}
+          </button>
+        </div>
+        {recentExpanded && (
+          recentByDay.length === 0 ? (
+            <div className="empty">
+              <div className="sub">No entries in the last 30 days outside of today.</div>
+            </div>
+          ) : (
+            <div className="recent-days">
+              {recentByDay.map(({ day, list }) => (
+                <div key={day} className="recent-day">
+                  <h4 className="recent-day-head">{formatDayHeader(day)}</h4>
+                  <ol className="entry-list">
+                    {list.map((entry, idx) =>
+                      renderEntry(
+                        entry,
+                        String(list.length - idx).padStart(2, "0")
+                      )
+                    )}
+                  </ol>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </section>
 
@@ -868,6 +948,28 @@ function domainOf(u: string) {
   } catch {
     return u;
   }
+}
+
+function pacificDateKey(iso: string): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(new Date(iso));
+}
+
+function formatDayHeader(yyyymmdd: string): string {
+  const [y, m, d] = yyyymmdd.split("-").map(Number);
+  if (!y || !m || !d) return yyyymmdd;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 /* --------------------------- background ---------------------------- */

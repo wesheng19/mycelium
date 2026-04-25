@@ -702,6 +702,27 @@ button.mode-tile,
   background: rgba(185, 74, 60, 0.06);
 }
 
+.recent-days {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 8px;
+}
+.recent-day {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.recent-day-head {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--ink-3);
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: var(--rule);
+}
+
 .entry-title {
   font-family: var(--serif);
   font-weight: 400;
