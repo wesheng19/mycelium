@@ -58,6 +58,14 @@ export default function Home() {
     ok: boolean;
     msg: string;
   } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingAttachIdRef = useRef<string | null>(null);
+
+  function openFilePicker(entryId: string) {
+    if (attachingId) return;
+    pendingAttachIdRef.current = entryId;
+    fileInputRef.current?.click();
+  }
 
   const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
   const [recentExpanded, setRecentExpanded] = useState(false);
@@ -475,25 +483,18 @@ export default function Home() {
             </div>
             <div className="entry-top-right">
               {!selectMode && (
-                <label
+                <button
+                  type="button"
                   className={`attach-btn ${attachingId === entry.id ? "busy" : ""}`}
                   title="Attach images to this entry"
-                  onClick={(e) => e.stopPropagation()}
+                  disabled={attachingId === entry.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFilePicker(entry.id);
+                  }}
                 >
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
-                    hidden
-                    disabled={attachingId === entry.id}
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      e.target.value = "";
-                      void attachFiles(entry.id, files);
-                    }}
-                  />
                   {attachingId === entry.id ? "…" : "📎"}
-                </label>
+                </button>
               )}
               {selectMode && (
                 <span className={`check ${isSel ? "on" : ""}`} aria-hidden>
@@ -889,6 +890,23 @@ export default function Home() {
           )
         )}
       </section>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
+        hidden
+        onChange={(e) => {
+          const files = e.target.files;
+          e.target.value = "";
+          const id = pendingAttachIdRef.current;
+          pendingAttachIdRef.current = null;
+          if (id && files && files.length > 0) {
+            void attachFiles(id, files);
+          }
+        }}
+      />
 
       <footer className="colophon">
         <div className="col-rule" aria-hidden />
