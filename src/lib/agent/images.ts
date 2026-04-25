@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { deepseek } from "@ai-sdk/deepseek";
-import type { Summary } from "@/lib/deepseek";
+import { DEEPSEEK_MODEL, type Summary } from "@/lib/deepseek";
 import type { ImageCandidate } from "@/lib/ingest/youtube";
 
 const ARTICLE_BODY_PICK_LIMIT = 3;
@@ -54,7 +54,7 @@ export async function pickArticleBodyImages(input: {
 
   try {
     const result = await generateText({
-      model: deepseek("deepseek-chat"),
+      model: deepseek(DEEPSEEK_MODEL),
       system: SYSTEM_PROMPT,
       messages: [
         {

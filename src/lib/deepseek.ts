@@ -4,14 +4,15 @@ import OpenAI from "openai";
  * DeepSeek client. DeepSeek's API is OpenAI-compatible — we point
  * the OpenAI SDK at their base URL.
  *
- * Models: `deepseek-chat`, `deepseek-reasoner`.
+ * Models: `deepseek-v4-flash` (default), `deepseek-v4-pro`.
+ * (`deepseek-chat` and `deepseek-reasoner` are deprecated 2026-07-24.)
  */
 export const deepseek = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY ?? "",
   baseURL: "https://api.deepseek.com",
 });
 
-export const DEEPSEEK_MODEL = "deepseek-chat";
+export const DEEPSEEK_MODEL = "deepseek-v4-flash";
 
 export type SummarizeInput = {
   title?: string;
