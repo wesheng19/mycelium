@@ -59,15 +59,35 @@ export default function Home() {
     msg: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const activeListenersRef = useRef<{
+    change: (e: Event) => void;
+    cancel: () => void;
+  } | null>(null);
+
   function openFilePicker(entryId: string) {
     if (attachingId) return;
     const input = fileInputRef.current;
     if (!input) return;
-    // One-shot vanilla listener captures entryId in its closure, so we
-    // don't depend on a ref that any subsequent render or onChange call
-    // could have cleared in between the click and the user's selection.
-    const handler = (e: Event) => {
-      input.removeEventListener("change", handler);
+
+    // If a previous picker was opened and then cancelled (Escape, click
+    // outside, or close), its change handler may still be attached.
+    // Remove it so files don't get attributed to a stale entry id.
+    const stale = activeListenersRef.current;
+    if (stale) {
+      input.removeEventListener("change", stale.change);
+      input.removeEventListener("cancel", stale.cancel);
+      activeListenersRef.current = null;
+    }
+
+    const cleanup = () => {
+      input.removeEventListener("change", onChange);
+      input.removeEventListener("cancel", cleanup);
+      if (activeListenersRef.current?.change === onChange) {
+        activeListenersRef.current = null;
+      }
+    };
+    const onChange = (e: Event) => {
+      cleanup();
       const target = e.target as HTMLInputElement;
       const files = target.files;
       target.value = "";
@@ -75,7 +95,10 @@ export default function Home() {
         void attachFiles(entryId, files);
       }
     };
-    input.addEventListener("change", handler);
+
+    activeListenersRef.current = { change: onChange, cancel: cleanup };
+    input.addEventListener("change", onChange);
+    input.addEventListener("cancel", cleanup);
     input.click();
   }
 
