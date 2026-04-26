@@ -59,12 +59,47 @@ export default function Home() {
     msg: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingAttachIdRef = useRef<string | null>(null);
+  const activeListenersRef = useRef<{
+    change: (e: Event) => void;
+    cancel: () => void;
+  } | null>(null);
 
   function openFilePicker(entryId: string) {
     if (attachingId) return;
-    pendingAttachIdRef.current = entryId;
-    fileInputRef.current?.click();
+    const input = fileInputRef.current;
+    if (!input) return;
+
+    // If a previous picker was opened and then cancelled (Escape, click
+    // outside, or close), its change handler may still be attached.
+    // Remove it so files don't get attributed to a stale entry id.
+    const stale = activeListenersRef.current;
+    if (stale) {
+      input.removeEventListener("change", stale.change);
+      input.removeEventListener("cancel", stale.cancel);
+      activeListenersRef.current = null;
+    }
+
+    const cleanup = () => {
+      input.removeEventListener("change", onChange);
+      input.removeEventListener("cancel", cleanup);
+      if (activeListenersRef.current?.change === onChange) {
+        activeListenersRef.current = null;
+      }
+    };
+    const onChange = (e: Event) => {
+      cleanup();
+      const target = e.target as HTMLInputElement;
+      const files = target.files;
+      target.value = "";
+      if (files && files.length > 0) {
+        void attachFiles(entryId, files);
+      }
+    };
+
+    activeListenersRef.current = { change: onChange, cancel: cleanup };
+    input.addEventListener("change", onChange);
+    input.addEventListener("cancel", cleanup);
+    input.click();
   }
 
   const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
@@ -897,15 +932,6 @@ export default function Home() {
         multiple
         accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
         hidden
-        onChange={(e) => {
-          const files = e.target.files;
-          e.target.value = "";
-          const id = pendingAttachIdRef.current;
-          pendingAttachIdRef.current = null;
-          if (id && files && files.length > 0) {
-            void attachFiles(id, files);
-          }
-        }}
       />
 
       <footer className="colophon">
