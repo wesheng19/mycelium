@@ -393,11 +393,22 @@ export default function Home() {
   }
 
   async function attachFiles(entryId: string, fileList: FileList | null) {
-    if (!secret) {
-      setError("Missing INGEST_SECRET — refresh and enter it.");
+    if (!fileList || fileList.length === 0) return;
+    // Read directly from localStorage rather than React state so a
+    // momentary state desync (PWA cache, hot mount race) doesn't make
+    // attaches silently fail. Falls back to React state for completeness.
+    const ingestSecret =
+      (typeof window !== "undefined" &&
+        window.localStorage.getItem(SECRET_KEY)) ||
+      secret;
+    if (!ingestSecret) {
+      setAttachStatus({
+        id: entryId,
+        ok: false,
+        msg: "Missing INGEST_SECRET — refresh and re-enter it.",
+      });
       return;
     }
-    if (!fileList || fileList.length === 0) return;
     setAttachingId(entryId);
     setAttachStatus(null);
     try {
@@ -405,7 +416,7 @@ export default function Home() {
       for (const f of Array.from(fileList)) fd.append("file", f);
       const res = await fetch(`/api/learnings/${entryId}/images`, {
         method: "POST",
-        headers: { "x-ingest-secret": secret },
+        headers: { "x-ingest-secret": ingestSecret },
         body: fd,
       });
       const data = (await res.json()) as {
