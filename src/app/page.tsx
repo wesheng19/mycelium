@@ -89,9 +89,12 @@ export default function Home() {
     const onChange = (e: Event) => {
       cleanup();
       const target = e.target as HTMLInputElement;
-      const files = target.files;
+      // input.files is a *live* FileList — setting value="" empties it,
+      // which clobbers any reference we held. Snapshot to a plain array
+      // BEFORE clearing the input so the data survives the reset.
+      const files = target.files ? Array.from(target.files) : [];
       target.value = "";
-      if (files && files.length > 0) {
+      if (files.length > 0) {
         void attachFiles(entryId, files);
       }
     };
@@ -392,20 +395,31 @@ export default function Home() {
     setRecentExpanded((v) => !v);
   }
 
-  async function attachFiles(entryId: string, fileList: FileList | null) {
-    if (!secret) {
-      setError("Missing INGEST_SECRET — refresh and enter it.");
+  async function attachFiles(entryId: string, files: File[]) {
+    if (files.length === 0) return;
+    // Read directly from localStorage rather than React state so a
+    // momentary state desync (PWA cache, hot mount race) doesn't make
+    // attaches silently fail. Falls back to React state for completeness.
+    const ingestSecret =
+      (typeof window !== "undefined" &&
+        window.localStorage.getItem(SECRET_KEY)) ||
+      secret;
+    if (!ingestSecret) {
+      setAttachStatus({
+        id: entryId,
+        ok: false,
+        msg: "Missing INGEST_SECRET — refresh and re-enter it.",
+      });
       return;
     }
-    if (!fileList || fileList.length === 0) return;
     setAttachingId(entryId);
     setAttachStatus(null);
     try {
       const fd = new FormData();
-      for (const f of Array.from(fileList)) fd.append("file", f);
+      for (const f of files) fd.append("file", f);
       const res = await fetch(`/api/learnings/${entryId}/images`, {
         method: "POST",
-        headers: { "x-ingest-secret": secret },
+        headers: { "x-ingest-secret": ingestSecret },
         body: fd,
       });
       const data = (await res.json()) as {
