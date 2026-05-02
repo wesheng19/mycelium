@@ -332,7 +332,19 @@ export default function ArchivePage() {
                     <li
                       key={entry.id}
                       className={`entry ${isOpen ? "open" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isOpen}
                       onClick={() => setExpanded(isOpen ? null : entry.id)}
+                      onKeyDown={(e) => {
+                        // Inner tag buttons share the keydown bubble path; only
+                        // toggle when the row itself is the focused element.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpanded(isOpen ? null : entry.id);
+                        }
+                      }}
                     >
                       <div className="entry-index">
                         <span className="idx-num">
