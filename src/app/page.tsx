@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Entry = {
@@ -640,6 +641,13 @@ export default function Home() {
             <button className="ghost-btn" onClick={flipTheme}>
               {theme === "ink" ? "paper" : "ink"}
             </button>
+            <Link
+              href="/setup"
+              className="ghost-btn"
+              style={{ textDecoration: "none" }}
+            >
+              setup
+            </Link>
             <button className="ghost-btn" onClick={resetSecret}>
               reset secret
             </button>
