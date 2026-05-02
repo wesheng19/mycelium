@@ -642,6 +642,13 @@ export default function Home() {
               {theme === "ink" ? "paper" : "ink"}
             </button>
             <Link
+              href="/archive"
+              className="ghost-btn"
+              style={{ textDecoration: "none" }}
+            >
+              archive
+            </Link>
+            <Link
               href="/setup"
               className="ghost-btn"
               style={{ textDecoration: "none" }}
