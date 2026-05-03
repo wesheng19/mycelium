@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+// Canonical source values stored in the DB and accepted by the search API.
+// "text" is the canonical literal for plain notes — there is no "note" row.
+type Source = "article" | "youtube" | "text" | "book";
+
 type Entry = {
   id: string;
   title: string;
-  source: string;
+  source: Source;
   url: string | null;
   tldr: string | null;
   tags: string[] | null;
@@ -19,15 +23,14 @@ type TagCount = { tag: string; count: number };
 
 const THEME_KEY = "mycelium.theme";
 
-const SOURCE_META: Record<string, { glyph: string; label: string }> = {
-  book: { glyph: "❦", label: "Book" },
+const SOURCE_META: Record<Source, { glyph: string; label: string }> = {
   article: { glyph: "§", label: "Article" },
   youtube: { glyph: "▶", label: "Video" },
+  book: { glyph: "❦", label: "Book" },
   text: { glyph: "✱", label: "Note" },
-  note: { glyph: "✱", label: "Note" },
 };
 
-const SOURCE_PILLS: Array<{ value: string; label: string }> = [
+const SOURCE_PILLS: Array<{ value: "" | Source; label: string }> = [
   { value: "", label: "All" },
   { value: "article", label: "Articles" },
   { value: "youtube", label: "Videos" },
@@ -41,7 +44,7 @@ export default function ArchivePage() {
   const [theme, setTheme] = useState<"paper" | "ink">("paper");
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState<"" | Source>("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -93,6 +96,11 @@ export default function ArchivePage() {
           setTruncated(data.truncated);
         } catch (err) {
           if ((err as Error).name === "AbortError") return;
+          // The previous result set is for an older filter combination — keep
+          // it on screen and we'd be lying about what's matching.
+          setEntries([]);
+          setTruncated(false);
+          setExpanded(null);
           setError(err instanceof Error ? err.message : "Unknown error");
         } finally {
           if (!ctrl.signal.aborted) setLoading(false);
@@ -157,12 +165,17 @@ export default function ArchivePage() {
       </div>
 
       <section className="capture-form" style={{ padding: 22, marginBottom: 32 }}>
-        <div className="capture-label" style={{ marginBottom: 14 }}>
+        <label
+          htmlFor="archive-search"
+          className="capture-label"
+          style={{ marginBottom: 14 }}
+        >
           <span className="num">⌕</span>
           <span>Search</span>
           <span className="sub">— word, phrase, &ldquo;exact match&rdquo;, -exclude</span>
-        </div>
+        </label>
         <input
+          id="archive-search"
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -327,7 +340,7 @@ export default function ArchivePage() {
               <ol className="entry-list">
                 {list.map((entry, idx) => {
                   const isOpen = expanded === entry.id;
-                  const meta = SOURCE_META[entry.source] || SOURCE_META.note;
+                  const meta = SOURCE_META[entry.source] ?? SOURCE_META.text;
                   return (
                     <li
                       key={entry.id}
