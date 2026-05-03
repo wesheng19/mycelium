@@ -187,7 +187,18 @@ export async function POST(req: Request) {
       selfPath: path,
     });
 
-    await commitNote(path, initialMarkdown, `add ${path}`);
+    const initialCommit = await commitNote(
+      path,
+      initialMarkdown,
+      `add ${path}`
+    );
+    // commitNote only returns null when given an expectedSha precondition
+    // that doesn't match — the initial commit doesn't pass one, so it
+    // always succeeds (or throws). Defensively narrow anyway.
+    if (!initialCommit) {
+      throw new Error(`commit of ${path} returned null unexpectedly`);
+    }
+    const initialSha = initialCommit.sha;
 
     if (db) {
       await db.insert(learnings).values({
@@ -271,12 +282,29 @@ export async function POST(req: Request) {
           images,
           selfPath: path,
         });
-        await commitNote(path, enrichedMarkdown, `enrich ${path}`);
-        console.log(
-          `[ingest] background enrichment complete for ${path}` +
-            ` (related=${related.length}, refs=${references.length},` +
-            ` images=${images.length})`
+        // Atomic precondition: only overwrite if the file is still on the
+        // SHA we wrote in the sync phase. If a concurrent edit landed
+        // during the enrichment window (e.g. Phase 4 edit-in-place) the
+        // GitHub API rejects the update and commitNote returns null —
+        // we keep the user's version and just log.
+        const enrichedCommit = await commitNote(
+          path,
+          enrichedMarkdown,
+          `enrich ${path}`,
+          { expectedSha: initialSha }
         );
+        if (!enrichedCommit) {
+          console.warn(
+            `[ingest] note ${path} was modified during enrichment window;` +
+              ` skipping rewrite to preserve the concurrent edit`
+          );
+        } else {
+          console.log(
+            `[ingest] background enrichment complete for ${path}` +
+              ` (related=${related.length}, refs=${references.length},` +
+              ` images=${images.length})`
+          );
+        }
       } catch (err) {
         console.warn("[ingest] background enrichment failed:", err);
       }
