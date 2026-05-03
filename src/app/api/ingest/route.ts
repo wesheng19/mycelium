@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { handleYouTube, isYouTubeUrl } from "@/lib/ingest/youtube";
 import { handleAppleNews, isAppleNewsUrl } from "@/lib/ingest/appleNews";
 import { handleArticle } from "@/lib/ingest/article";
@@ -169,71 +169,36 @@ export async function POST(req: Request) {
     });
 
     const now = new Date();
-
-    // The four post-summarize tasks each depend only on the summary and the
-    // original normalized inputs, not on each other. Run them in parallel,
-    // each with its own deadline so a slow agent doesn't blow the 60s cap.
-    // On timeout we keep the un-enriched values — the note still files,
-    // just with degraded enrichment for that one entry.
-    const [enrichedVocabulary, related, references, images] = await Promise.all([
-      deadline(
-        enrichVocabulary({
-          text: normalized.content,
-          candidates: summary.vocabulary,
-        }),
-        ENRICH_DEADLINE_MS,
-        summary.vocabulary,
-        "enrichVocabulary"
-      ),
-      deadline(
-        findRelatedNotes({ summary }),
-        ENRICH_DEADLINE_MS,
-        [] as Awaited<ReturnType<typeof findRelatedNotes>>,
-        "findRelatedNotes"
-      ),
-      deadline(
-        normalized.source === "article" && normalized.bodyLinks?.length
-          ? buildReferences({
-              summary,
-              bodyLinks: normalized.bodyLinks,
-            })
-          : Promise.resolve(
-              [] as Awaited<ReturnType<typeof buildReferences>>
-            ),
-        ENRICH_DEADLINE_MS,
-        [] as Awaited<ReturnType<typeof buildReferences>>,
-        "buildReferences"
-      ),
-      deadline(
-        normalized.source === "article" && normalized.imageCandidates?.length
-          ? processArticleImages({
-              candidates: normalized.imageCandidates,
-              summary,
-              date: now,
-            })
-          : Promise.resolve(
-              [] as Awaited<ReturnType<typeof processArticleImages>>
-            ),
-        IMAGE_DEADLINE_MS,
-        [] as Awaited<ReturnType<typeof processArticleImages>>,
-        "processArticleImages"
-      ),
-    ]);
-    summary.vocabulary = enrichedVocabulary;
-
     const path = vaultPath(now, summary.title);
-    const markdown = buildMarkdown({
+
+    // ---- SYNCHRONOUS PHASE ----------------------------------------------
+    // File a basic markdown (no related/references/images yet) and insert
+    // the DB row so the entry is visible on the home page right away. We
+    // commit before returning so iOS Shortcut and the bookmarklet relay
+    // get a fast 200 instead of waiting on a slow enrichment chain that
+    // blows past their request timeouts. All searchable fields (title,
+    // tldr, takeaways, tags) come out of summarize, so search/archive
+    // work the moment the response lands.
+    const initialMarkdown = buildMarkdown({
       summary,
       source: normalized.source,
       url: normalized.url,
       date: now,
-      related,
-      references,
-      images,
       selfPath: path,
     });
 
-    await commitNote(path, markdown, `add ${path}`);
+    const initialCommit = await commitNote(
+      path,
+      initialMarkdown,
+      `add ${path}`
+    );
+    // commitNote only returns null when given an expectedSha precondition
+    // that doesn't match — the initial commit doesn't pass one, so it
+    // always succeeds (or throws). Defensively narrow anyway.
+    if (!initialCommit) {
+      throw new Error(`commit of ${path} returned null unexpectedly`);
+    }
+    const initialSha = initialCommit.sha;
 
     if (db) {
       await db.insert(learnings).values({
@@ -246,6 +211,104 @@ export async function POST(req: Request) {
         markdownPath: path,
       });
     }
+
+    // ---- DEFERRED ENRICHMENT --------------------------------------------
+    // Runs after the response is sent, within the same function invocation.
+    // Vercel keeps the function alive until either every after() callback
+    // resolves or maxDuration is reached — so worst-case the enrichment
+    // re-commit gets clipped, leaving only the basic markdown in place. A
+    // partially-enriched note beats no note (or, before this PR, an iOS
+    // request that timed out outright).
+    after(async () => {
+      try {
+        const [enrichedVocabulary, related, references, images] =
+          await Promise.all([
+            deadline(
+              enrichVocabulary({
+                text: normalized.content,
+                candidates: summary.vocabulary,
+              }),
+              ENRICH_DEADLINE_MS,
+              summary.vocabulary,
+              "enrichVocabulary"
+            ),
+            deadline(
+              findRelatedNotes({ summary }),
+              ENRICH_DEADLINE_MS,
+              [] as Awaited<ReturnType<typeof findRelatedNotes>>,
+              "findRelatedNotes"
+            ),
+            deadline(
+              normalized.source === "article" && normalized.bodyLinks?.length
+                ? buildReferences({
+                    summary,
+                    bodyLinks: normalized.bodyLinks,
+                  })
+                : Promise.resolve(
+                    [] as Awaited<ReturnType<typeof buildReferences>>
+                  ),
+              ENRICH_DEADLINE_MS,
+              [] as Awaited<ReturnType<typeof buildReferences>>,
+              "buildReferences"
+            ),
+            deadline(
+              normalized.source === "article" &&
+                normalized.imageCandidates?.length
+                ? processArticleImages({
+                    candidates: normalized.imageCandidates,
+                    summary,
+                    date: now,
+                  })
+                : Promise.resolve(
+                    [] as Awaited<ReturnType<typeof processArticleImages>>
+                  ),
+              IMAGE_DEADLINE_MS,
+              [] as Awaited<ReturnType<typeof processArticleImages>>,
+              "processArticleImages"
+            ),
+          ]);
+
+        const enrichedSummary = {
+          ...summary,
+          vocabulary: enrichedVocabulary,
+        };
+        const enrichedMarkdown = buildMarkdown({
+          summary: enrichedSummary,
+          source: normalized.source,
+          url: normalized.url,
+          date: now,
+          related,
+          references,
+          images,
+          selfPath: path,
+        });
+        // Atomic precondition: only overwrite if the file is still on the
+        // SHA we wrote in the sync phase. If a concurrent edit landed
+        // during the enrichment window (e.g. Phase 4 edit-in-place) the
+        // GitHub API rejects the update and commitNote returns null —
+        // we keep the user's version and just log.
+        const enrichedCommit = await commitNote(
+          path,
+          enrichedMarkdown,
+          `enrich ${path}`,
+          { expectedSha: initialSha }
+        );
+        if (!enrichedCommit) {
+          console.warn(
+            `[ingest] note ${path} was modified during enrichment window;` +
+              ` skipping rewrite to preserve the concurrent edit`
+          );
+        } else {
+          console.log(
+            `[ingest] background enrichment complete for ${path}` +
+              ` (related=${related.length}, refs=${references.length},` +
+              ` images=${images.length})`
+          );
+        }
+      } catch (err) {
+        console.warn("[ingest] background enrichment failed:", err);
+      }
+    });
 
     return NextResponse.json({
       ok: true,
