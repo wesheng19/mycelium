@@ -117,30 +117,36 @@ export async function POST(req: Request) {
       url: normalized.url,
     });
 
-    summary.vocabulary = await enrichVocabulary({
-      text: normalized.content,
-      candidates: summary.vocabulary,
-    });
+    const now = new Date();
 
-    const related = await findRelatedNotes({ summary });
-
-    const references =
+    // The four post-summarize tasks each depend only on the summary and the
+    // original normalized inputs, not on each other. Run them in parallel so
+    // a long article doesn't blow past Vercel's 60s function budget.
+    const [enrichedVocabulary, related, references, images] = await Promise.all([
+      enrichVocabulary({
+        text: normalized.content,
+        candidates: summary.vocabulary,
+      }),
+      findRelatedNotes({ summary }),
       normalized.source === "article" && normalized.bodyLinks?.length
-        ? await buildReferences({
+        ? buildReferences({
             summary,
             bodyLinks: normalized.bodyLinks,
           })
-        : [];
-
-    const now = new Date();
-    const images =
+        : Promise.resolve(
+            [] as Awaited<ReturnType<typeof buildReferences>>
+          ),
       normalized.source === "article" && normalized.imageCandidates?.length
-        ? await processArticleImages({
+        ? processArticleImages({
             candidates: normalized.imageCandidates,
             summary,
             date: now,
           })
-        : [];
+        : Promise.resolve(
+            [] as Awaited<ReturnType<typeof processArticleImages>>
+          ),
+    ]);
+    summary.vocabulary = enrichedVocabulary;
 
     const path = vaultPath(now, summary.title);
     const markdown = buildMarkdown({
