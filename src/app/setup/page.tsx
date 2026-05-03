@@ -140,7 +140,17 @@ export default function SetupPage() {
             shortcut.
           </li>
           <li>
-            Tap <strong>Add Action</strong> → search <em>Get Contents of URL</em> → tap to add it.
+            Tap <strong>Add Action</strong> → search <em>Text</em> → add the{" "}
+            <strong>Text</strong> action. In its content field, tap the magic-variable button
+            and pick <strong>Shortcut Input</strong>. This coerces the URL-type share-sheet
+            input into a plain string — without it, iOS throws{" "}
+            <em>&ldquo;The string did not match the expected pattern.&rdquo;</em> when the JSON
+            body is built below.
+          </li>
+          <li>
+            Tap <strong>Add Action</strong> again → search{" "}
+            <em>Get Contents of URL</em> → add it. Make sure it sits <em>below</em> the Text
+            action in the action list (drag to reorder if needed).
           </li>
           <li>
             Set the <strong>URL</strong> field to{" "}
@@ -165,8 +175,9 @@ export default function SetupPage() {
           </li>
           <li>
             Set <strong>Request Body</strong> to <strong>JSON</strong>. Add a key{" "}
-            <code style={codeStyle}>url</code> whose value is the magic variable{" "}
-            <strong>Shortcut Input</strong> (tap the value field, then the variable picker).
+            <code style={codeStyle}>url</code>; for its value, tap the magic-variable button
+            and pick the <strong>Text</strong> output from step 2 (not <em>Shortcut Input</em>{" "}
+            directly).
           </li>
           <li>
             Tap the <strong>(i)</strong> info button at the bottom → name it{" "}
@@ -183,6 +194,13 @@ export default function SetupPage() {
         <p style={{ ...proseStyle, color: "var(--ink-3)", fontSize: 14 }}>
           The secret lives only inside the Shortcut definition on your phone — it never syncs to
           another device unless you explicitly share the Shortcut.
+        </p>
+        <p style={{ ...proseStyle, color: "var(--ink-3)", fontSize: 14 }}>
+          <strong>Already set up the Shortcut and seeing the &ldquo;string did not match the
+          expected pattern&rdquo; error?</strong> You can fix the existing Shortcut without
+          rebuilding it: open it for editing, add a <strong>Text</strong> action at the top
+          containing <em>Shortcut Input</em>, then in the JSON body re-pick the value to be
+          that Text action&rsquo;s output instead of <em>Shortcut Input</em> directly.
         </p>
       </section>
 
