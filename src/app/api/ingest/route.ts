@@ -20,6 +20,46 @@ export const runtime = "nodejs";
 // Article extraction + DeepSeek calls easily exceed Vercel's default 10s.
 export const maxDuration = 60;
 
+// Per-task time budget for the post-summarize parallel block. If an agent
+// takes longer than this, we drop its enrichment and return what we have —
+// better to file a partially-enriched note than to blow the function cap
+// and return no JSON at all.
+const ENRICH_DEADLINE_MS = 18_000;
+const IMAGE_DEADLINE_MS = 25_000;
+
+/**
+ * Race a promise against a wall-clock deadline. On timeout (or rejection),
+ * resolve with `fallback`. The underlying work keeps running until the
+ * function shuts down, but we stop waiting on it.
+ */
+function deadline<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+  label: string
+): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let done = false;
+    const finish = (value: T) => {
+      if (done) return;
+      done = true;
+      resolve(value);
+    };
+    promise
+      .then(finish)
+      .catch((err) => {
+        console.warn(`[ingest] ${label} failed, using fallback:`, err);
+        finish(fallback);
+      });
+    setTimeout(() => {
+      if (!done) {
+        console.warn(`[ingest] ${label} exceeded ${ms}ms, using fallback`);
+        finish(fallback);
+      }
+    }, ms);
+  });
+}
+
 type IngestBody = {
   url?: string | string[];
   text?: string;
@@ -120,31 +160,53 @@ export async function POST(req: Request) {
     const now = new Date();
 
     // The four post-summarize tasks each depend only on the summary and the
-    // original normalized inputs, not on each other. Run them in parallel so
-    // a long article doesn't blow past Vercel's 60s function budget.
+    // original normalized inputs, not on each other. Run them in parallel,
+    // each with its own deadline so a slow agent doesn't blow the 60s cap.
+    // On timeout we keep the un-enriched values — the note still files,
+    // just with degraded enrichment for that one entry.
     const [enrichedVocabulary, related, references, images] = await Promise.all([
-      enrichVocabulary({
-        text: normalized.content,
-        candidates: summary.vocabulary,
-      }),
-      findRelatedNotes({ summary }),
-      normalized.source === "article" && normalized.bodyLinks?.length
-        ? buildReferences({
-            summary,
-            bodyLinks: normalized.bodyLinks,
-          })
-        : Promise.resolve(
-            [] as Awaited<ReturnType<typeof buildReferences>>
-          ),
-      normalized.source === "article" && normalized.imageCandidates?.length
-        ? processArticleImages({
-            candidates: normalized.imageCandidates,
-            summary,
-            date: now,
-          })
-        : Promise.resolve(
-            [] as Awaited<ReturnType<typeof processArticleImages>>
-          ),
+      deadline(
+        enrichVocabulary({
+          text: normalized.content,
+          candidates: summary.vocabulary,
+        }),
+        ENRICH_DEADLINE_MS,
+        summary.vocabulary,
+        "enrichVocabulary"
+      ),
+      deadline(
+        findRelatedNotes({ summary }),
+        ENRICH_DEADLINE_MS,
+        [] as Awaited<ReturnType<typeof findRelatedNotes>>,
+        "findRelatedNotes"
+      ),
+      deadline(
+        normalized.source === "article" && normalized.bodyLinks?.length
+          ? buildReferences({
+              summary,
+              bodyLinks: normalized.bodyLinks,
+            })
+          : Promise.resolve(
+              [] as Awaited<ReturnType<typeof buildReferences>>
+            ),
+        ENRICH_DEADLINE_MS,
+        [] as Awaited<ReturnType<typeof buildReferences>>,
+        "buildReferences"
+      ),
+      deadline(
+        normalized.source === "article" && normalized.imageCandidates?.length
+          ? processArticleImages({
+              candidates: normalized.imageCandidates,
+              summary,
+              date: now,
+            })
+          : Promise.resolve(
+              [] as Awaited<ReturnType<typeof processArticleImages>>
+            ),
+        IMAGE_DEADLINE_MS,
+        [] as Awaited<ReturnType<typeof processArticleImages>>,
+        "processArticleImages"
+      ),
     ]);
     summary.vocabulary = enrichedVocabulary;
 

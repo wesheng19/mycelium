@@ -78,11 +78,14 @@ function buildUserPrompt(input: SummarizeInput): string {
 }
 
 /**
- * Truncate to a reasonable token budget. DeepSeek-chat has a large
- * context window but transcripts can blow past anything sensible.
- * We cut at a character count; cheap and fine for v0.
+ * Truncate to a reasonable token budget. DeepSeek's context window is
+ * generous, but the *response* time scales with input size and we need
+ * to fit the whole ingest pipeline (summarize + parallel agents + commit)
+ * inside Vercel Hobby's 60s function cap. 35K chars is ~9K tokens — still
+ * enough context for a faithful summary on long articles without pushing
+ * summarize past ~25s.
  */
-function truncate(text: string, max = 60_000): string {
+function truncate(text: string, max = 35_000): string {
   if (text.length <= max) return text;
   return text.slice(0, max) + "\n\n[…content truncated]";
 }
