@@ -40,11 +40,16 @@ function deadline<T>(
 ): Promise<T> {
   return new Promise<T>((resolve) => {
     let done = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Initialized to null and then reassigned with the real timer so that
+    // `finish`'s closure can clear it. The null start also satisfies
+    // prefer-const — without an initial value the lone reassignment below
+    // would have ESLint asking us to use `const`, which would force the
+    // setTimeout call back above `finish` and break the cleanup path.
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const finish = (value: T) => {
       if (done) return;
       done = true;
-      if (timer) clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
       resolve(value);
     };
     promise
