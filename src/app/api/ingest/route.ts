@@ -40,18 +40,24 @@ function deadline<T>(
 ): Promise<T> {
   return new Promise<T>((resolve) => {
     let done = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (value: T) => {
       if (done) return;
       done = true;
+      if (timer) clearTimeout(timer);
       resolve(value);
     };
     promise
       .then(finish)
       .catch((err) => {
-        console.warn(`[ingest] ${label} failed, using fallback:`, err);
+        // Only log if we're still the resolver — a post-deadline rejection
+        // would otherwise duplicate the timeout warning we already emitted.
+        if (!done) {
+          console.warn(`[ingest] ${label} failed, using fallback:`, err);
+        }
         finish(fallback);
       });
-    setTimeout(() => {
+    timer = setTimeout(() => {
       if (!done) {
         console.warn(`[ingest] ${label} exceeded ${ms}ms, using fallback`);
         finish(fallback);

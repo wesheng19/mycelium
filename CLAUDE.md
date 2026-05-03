@@ -66,7 +66,7 @@ Single table `learnings`:
 
 1. User submits URL or text via the form (or directly via `POST /api/ingest`)
 2. Content extracted (Readability for articles, transcript for YouTube, passthrough for text)
-3. Truncated to 60k chars, sent to DeepSeek for structured summarization
+3. Truncated to 35k chars, sent to DeepSeek for structured summarization (chosen to keep the whole pipeline inside Vercel Hobby's 60s function cap)
 4. Markdown note generated with YAML frontmatter (date, source, url, tags)
 5. Committed to `wesheng19/mycelium-vault` on GitHub at path `YYYY/MM/YYYY-MM-DD-slug.md`
 6. Metadata row inserted into PostgreSQL `learnings` table
